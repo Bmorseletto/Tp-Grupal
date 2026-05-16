@@ -1,0 +1,62 @@
+@startuml SequenceIngestaDatos
+
+title Diagrama de Secuencia Parte 1 - Fase de Ingesta de Datos
+
+autonumber
+
+participant "Cliente" as C
+participant "Gateway" as GW
+participant "Exchange\n(rk=transactions)" as EX1
+
+participant "Q1: Filtro USD<50\n" as F1
+
+participant "Q2: Filtro MaxPorBanco\n" as F2
+participant "Q2: Agregador\n(fusionar máx)" as A2
+
+participant "Q3: Filtro por Periodo\n" as F3p
+participant "Q3: Filtro PromedioPorMetodo\n09-01..09-05\n" as F3a
+participant "Q3: Agregador Promedios\n(fusionar promedios)" as A3a
+participant "Q3: Filtro Candidatas\n09-06..09-15\n" as F3b
+participant "Q3: Agregador Candidatas\n(fusionar candidatas)" as A3b
+participant "Q3: Filtro Comparación\n(monto < promedio/100)" as F3c
+
+participant "Q4: Filtro ConstructorGrafo\n09-01..09-05\n" as F4a
+participant "Exchange\n(rk=graph_merge)" as EXG
+participant "Q4: Filtro FusionadorGrafos\n(fusionar grafos)" as F4b
+participant "Q4: Filtro ScatterGather\n(detectar patrón)" as F4c
+
+participant "Q5: Conversor USD" as USD
+participant "Q5: Filtro WireACH\nUSD<1, 09-01..09-05\n" as F5
+participant "Q5: Agregador\n(sumar conteos)" as A5
+
+participant "Join\n(sincronización 5 vías)" as J
+
+== Conexión e Ingesta de Datos ==
+
+C -> GW : Conexión TCP
+GW -> GW : asignar client_id
+
+loop por cada transacción
+C -> GW : registro de transacción
+GW -> EX1 : [client_id, datos_tx]\nrk="transactions"
+EX1 -> F1 : round-robin
+EX1 -> F2 : round-robin
+EX1 -> F3p : round-robin
+F3p -> F3a : período 09-01..09-05
+F3p -> F3b : período 09-06..09-15
+F3p -> F4a : período 09-01..09-05
+F3p -> USD : período 09-01..09-05
+USD -> USD : convertir monto a USD
+USD -> F5 : transacciones en USD
+end
+
+note over F1 : Sin estado: reenviar si USD<50\nEnviar [client_id, origen, destino, monto]\ndirectamente al Join
+note over F2 : Con estado: acumular\nmáximo USD por banco\npor client_id
+note over F3p : Con estado: enrutar por período\nfiltrar y enviar a Q3.1, Q3.2, Q4.1, Q5
+note over F3a : Con estado: acumular\nsuma y conteo por método\nde pago para 09-01..09-05
+note over F3b : Con estado: almacenar en búfer\ntransacciones candidatas\npara 09-06..09-15
+note over F4a : Con estado: construir lista de\nadyacencia parcial {origen: conjunto(dest)}\npara cuentas con >=5 destinos
+note over USD : Convierte monto a USD\nsolo para el pipeline de Q5
+note over F5 : Con estado: contar si\nmétodo_pago=Wire|ACH\ny USD < 1
+
+@enduml

@@ -1,0 +1,172 @@
+@startuml architecture
+
+' ========================
+' DAG DIAGRAM
+' ========================
+
+title DAG - Data Flow Architecture
+
+skinparam node {
+    BackgroundColor LightBlue
+    BorderColor DarkBlue
+}
+
+skinparam queue {
+    BackgroundColor LightYellow
+    BorderColor DarkOrange
+}
+
+node "Client" as client
+node "Gateway" as gateway
+queue "exchange\n(direct)\nrk=transactions" as exchange
+node "USD\nConverter" as usd_conv
+node "Filter 1\n(USD < 50)" as f1
+node "Filter 2\n(max per bank)" as f2
+node "Filter 3.1\n(avg by payment\n09-01 to 09-05)" as f3a
+node "Filter 3.2\n(amt < avg/100\n09-06 to 09-15)" as f3b
+node "Filter 3.3\n(comparison)" as f3c
+node "Filter 4.1\n(build graph\n09-01 to 09-05)" as f4a
+queue "exchange\n(direct)\nrk=graph_merge" as ex_graph
+node "Filter 4.2\n(merge graphs)" as f4b
+node "Filter 4.3\n(scatter-gather\ndetection)" as f4c
+node "Filter 5\n(Wire|ACH, USD<1\n09-01 to 09-05)" as f5
+node "Join" as join
+queue "results_queue" as results
+
+client --> gateway : TCP
+gateway --> exchange : publish\nrk=transactions
+exchange --> usd_conv : rk=transactions
+usd_conv --> f1
+usd_conv --> f2
+usd_conv --> f3a
+usd_conv --> f3b
+usd_conv --> f4a
+usd_conv --> f5
+f3a --> f3c : partial avgs\n+ EOF count
+f3b --> f3c : candidate txs\n+ EOF count
+f4a --> ex_graph : publish partial\ngraphs rk=graph_merge
+ex_graph --> f4b : rk=graph_merge
+f4b --> f4c : merged graph\n+ EOF
+f1 --> join
+f2 --> join
+f3c --> join
+f4c --> join
+f5 --> join
+join --> results
+results --> gateway
+gateway --> client : TCP
+
+@enduml
+
+@startuml sequence_diagram
+
+' ========================
+' SEQUENCE DIAGRAM
+' ========================
+
+title Diagrama de Secuencia - Procesamiento de Transacciones con Propagación de EOF
+
+participant "Cliente" as C
+participant "Gateway" as GW
+participant "Exchange\n(rk=transactions)" as EX1
+participant "Q1: Filtro USD<50\n[escalable]" as F1
+participant "Q2: Filtro MaxPorBanco\n[escalable]" as F2
+participant "Q2: Agregador\n(fusionar máx)" as A2
+participant "Q3: Filtro por Periodo\n[escalable]" as F3p
+participant "Q3: Filtro PromedioPorMetodo\n09-01..09-05\n[escalable]" as F3a
+participant "Q3: Agregador Promedios\n(fusionar promedios)" as A3a
+participant "Q3: Filtro Candidatas\n09-06..09-15\n[escalable]" as F3b
+participant "Q3: Agregador Candidatas\n(fusionar candidatas)" as A3b
+participant "Q3: Filtro Comparación\n(monto < promedio/100)" as F3c
+participant "Q4: Filtro ConstructorGrafo\n09-01..09-05\n[escalable]" as F4a
+participant "Exchange\n(rk=graph_merge)" as EXG
+participant "Q4: Filtro FusionadorGrafos\n(fusionar grafos)" as F4b
+participant "Q4: Filtro ScatterGather\n(detectar patrón)" as F4c
+participant "Q5: Conversor USD" as USD
+participant "Q5: Filtro WireACH\nUSD<1, 09-01..09-05\n[escalable]" as F5
+participant "Q5: Agregador\n(sumar conteos)" as A5
+participant "Join\n(sincronización 5 vías)" as J
+
+== Ingesta de Datos ==
+
+C -> GW : Conexión TCP
+GW -> GW : asignar client_id
+C -> GW : registros de transacción
+GW -> EX1 : [client_id, datos_tx]\nrk="transactions"
+
+EX1 -> F1 : round-robin
+EX1 -> F2 : round-robin
+EX1 -> F3p : round-robin
+F3p -> F3a : período 09-01..09-05
+F3p -> F3b : período 09-06..09-15
+F3p -> F4a : período 09-01..09-05
+F3p -> USD : período 09-01..09-05
+USD -> USD : convertir monto a USD
+USD -> F5 : transacciones en USD
+
+note over F1 : Sin estado: reenviar si USD<50
+note over F2 : Con estado: acumular máx por banco
+note over F3p : Con estado: enrutar por período
+note over F3a : Con estado: acumular suma y conteo\npor método de pago
+note over F3b : Con estado: almacenar en búfer\ncandidatas para 09-06..09-15
+note over F4a : Con estado: construir lista de\nadyacencia parcial
+note over USD : Convierte monto a USD\nsolo para el pipeline de Q5
+note over F5 : Con estado: contar si\nWire|ACH y USD<1
+
+F1 -> J : registros coincidentes\n[client_id, origen, destino, monto]
+
+== Propagación de EOF ==
+
+C -> GW : FIN_DE_REGISTROS
+GW -> EX1 : [client_id] EOF\nrk="transactions"
+
+EX1 -> F1 : EOF (1 instancia vía round-robin)
+F1 -> F1 : fanout difundir EOF\na las demás instancias
+F1 -> J : EOF de cada instancia
+
+EX1 -> F2 : EOF (1 instancia vía round-robin)
+F2 -> F2 : fanout difundir EOF\ntodas envían máx parcial
+F2 -> A2 : máx parcial por banco\n+ EOF de cada instancia
+note over A2 : Cuenta FILTER_2_AMOUNT EOFs\nFusiona valores máximos
+A2 -> J : máx fusionado por banco\n[client_id, resultado]
+
+EX1 -> F3p : EOF
+F3p -> F3a : EOF (período 09-01..09-05)
+F3a -> F3a : fanout difundir EOF\ntodas envían promedios parciales
+F3a -> A3a : promedios parciales\n+ EOF de cada instancia
+note over A3a : Cuenta FILTER_3_1_AMOUNT EOFs\nComputa promedio final\npor método de pago
+A3a -> F3c : promedios finales\n[client_id, {método: promedio}]
+
+F3p -> F3b : EOF (período 09-06..09-15)
+F3b -> F3b : fanout difundir EOF\ntodas envían candidatas
+F3b -> A3b : candidatas\n+ EOF de cada instancia
+note over A3b : Cuenta FILTER_3_2_AMOUNT EOFs\nFusiona listas de candidatas
+A3b -> F3c : candidatas fusionadas\n[client_id, candidatas]
+
+note over F3c : Espera ambas entradas:\n1. Promedios fusionados\n2. Candidatas fusionadas\nLuego: filtrar donde monto < promedio/100
+F3c -> J : coincidencias anomalía\n[client_id, resultado]
+
+F3p -> F4a : EOF (período 09-01..09-05)
+F4a -> F4a : fanout difundir EOF\ntodas envían listas de adyacencia
+F4a -> EXG : publicar grafos parciales\nrk="graph_merge"
+EXG -> F4b : grafos parciales
+note over F4b : Cuenta FILTER_4_1_AMOUNT EOFs\nFusiona listas de adyacencia
+F4b -> F4c : grafo completo + EOF
+note over F4c : Ejecutar detección\nde scatter-gather
+F4c -> J : cuentas coincidentes\n[client_id, resultado]
+
+F3p -> USD : EOF (período 09-01..09-05)
+USD -> F5 : EOF
+F5 -> F5 : fanout difundir EOF\ntodas envían conteos parciales
+F5 -> A5 : conteos parciales\n+ EOF de cada instancia
+note over A5 : Cuenta FILTER_5_AMOUNT EOFs\nSuma todos los conteos parciales
+A5 -> J : conteo total\n[client_id, conteo]
+
+== Sincronización del Join ==
+
+note over J : Espera resultados de\nTODAS las 5 consultas\npara este client_id
+
+J -> GW : [client_id, todos_los_resultados]\nvía results_queue
+GW -> C : Respuesta TCP\n(todos los resultados de las 5 consultas)
+
+@enduml

@@ -1,0 +1,87 @@
+@startuml DAG
+
+title DAG - Arquitectura de Flujo de Datos
+
+skinparam component {
+    BackgroundColor LightBlue
+    BorderColor DarkBlue
+    RoundCorner 15
+    FontSize 14
+}
+
+skinparam queue {
+    BackgroundColor LightYellow
+    BorderColor DarkOrange
+    FontSize 12
+}
+
+skinparam arrow {
+    FontSize 11
+}
+
+queue "Exchange (direct)\nrouting_key=transactions" as ex1
+queue "Exchange (direct)\nrouting_key=usd_transactions" as ex2
+queue "Exchange (direct)\nrouting_key=graph_merge" as ex_graph
+queue "Cola de Resultados" as results
+
+component "Cliente" as client
+component "Gateway" as gateway
+component "Conversor USD\n(escalable)" as usd_conv
+
+component "Q1: Filtro USD<50\n(escalable)" as f1
+
+component "Q2: Filtro MaxPorBanco\n(escalable)" as f2
+component "Q2: Agregador\n(fusionar máx por banco)" as agg2
+
+component "Q3: Filtro PromedioPorMetodo\nPeríodo 09-01 a 09-05\n(escalable)" as f3a
+component "Q3: Agregador Promedios\n(fusionar promedios)" as agg3a
+component "Q3: Filtro Candidatas\nPeríodo 09-06 a 09-15\n(escalable)" as f3b
+component "Q3: Agregador Candidatas\n(fusionar txs candidatas)" as agg3b
+component "Q3: Filtro Comparación\nmonto < promedio/100" as f3c
+
+component "Q4: Filtro ConstructorGrafo\nPeríodo 09-01 a 09-05\n(escalable)" as f4a
+component "Q4: Filtro FusionadorGrafos\n(fusionar grafos parciales)" as f4b
+component "Q4: Filtro ScatterGather\n(detectar patrón)" as f4c
+
+component "Q5: Filtro WireACH\nConteo USD<1, 09-01 a 09-05\n(escalable)" as f5
+component "Q5: Agregador\n(sumar conteos parciales)" as agg5
+
+component "Join\n(sincronización 5 vías)" as join
+
+client --> gateway : TCP
+gateway --> ex1 : publicar\nrk=transactions
+ex1 --> usd_conv : consumir\nrk=transactions
+
+usd_conv --> ex2 : publicar\nrk=usd_transactions
+
+ex2 --> f1 : round-robin
+ex2 --> f2 : round-robin
+ex2 --> f3a : round-robin
+ex2 --> f3b : round-robin
+ex2 --> f4a : round-robin
+ex2 --> f5 : round-robin
+
+f1 --> join : registros coincidentes\n[origen, destino, monto]
+
+f2 --> agg2 : máx parcial\npor banco
+agg2 --> join : máx fusionado\npor banco
+
+f3a --> agg3a : promedios parciales\npor método de pago
+f3b --> agg3b : transacciones\ncandidatas en búfer
+agg3a --> f3c : promedios finales
+agg3b --> f3c : candidatas fusionadas
+f3c --> join : coincidencias anomalía
+
+f4a --> ex_graph : adyacencia parcial\nrk=graph_merge
+ex_graph --> f4b : grafos parciales
+f4b --> f4c : grafo completo
+f4c --> join : cuentas\nscatter-gather
+
+f5 --> agg5 : conteos parciales
+agg5 --> join : conteo total
+
+join --> results : los 5 resultados
+results --> gateway : consumir
+gateway --> client : TCP
+
+@enduml
