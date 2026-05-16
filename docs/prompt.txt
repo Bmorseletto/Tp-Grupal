@@ -1,0 +1,3 @@
+How would you design the architecture for the distributed system described in the README? Keep in 
+mind that the services need to be symilar in style to the ones present in the previoous assignment 
+(code in /home/german/Facultad/tp-coordinacion-distribuidos).
