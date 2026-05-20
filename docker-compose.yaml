@@ -24,9 +24,8 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-    - INPUT_QUEUE=results_queue
+    - INPUT_QUEUE=transactions_queue
     - MOM_HOST=rabbitmq
-    - OUTPUT_QUEUE=input_queue
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678

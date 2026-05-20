@@ -11,11 +11,15 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
-OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
+AMOUNT_CURRENCY_FILTERS = os.environ["AMOUNT_CURRENCY"]
+CURRENCY_PREFIX = os.environ["CURRENCY_PREFIX"]
 
 
 def handle_client_request(client_socket, message_handler):
-    output_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, OUTPUT_QUEUE)
+    routing_keys = [CURRENCY_PREFIX] + [str(i) for i in range(AMOUNT_CURRENCY_FILTERS)]
+    data_output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
+            MOM_HOST, CURRENCY_PREFIX, routing_keys
+        )
 
     try:
         while True:
@@ -23,14 +27,14 @@ def handle_client_request(client_socket, message_handler):
 
             if message[0] == message_protocol.external.MsgType.TRANSACTION_RECORD:
                 serialized_message = message_handler.serialize_data_message(message[1])
-                output_queue.send(serialized_message)
+                data_output_exchange.send(serialized_message)
                 message_protocol.external.send_msg(
                     client_socket, message_protocol.external.MsgType.ACK
                 )
 
             if message[0] == message_protocol.external.MsgType.END_OF_RECODS:
                 serialized_message = message_handler.serialize_eof_message(message[1])
-                output_queue.send(serialized_message)
+                data_output_exchange.send(serialized_message)
                 message_protocol.external.send_msg(
                     client_socket, message_protocol.external.MsgType.ACK
                 )
@@ -40,7 +44,7 @@ def handle_client_request(client_socket, message_handler):
     except Exception as e:
         logging.error(e)
     finally:
-        output_queue.close()
+        data_output_exchange.close()
 
 
 def handle_client_response(client_list):
