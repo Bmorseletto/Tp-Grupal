@@ -37,12 +37,10 @@ class JoinFilterQ1:
 
     def process_messsage(self, message, ack, nack):
         desiriized_message = message_protocol.internal.deserialize(message)
-        if len(desiriized_message) == 3: #modificar 
-            self._process_data(desiriized_message)
-        elif len(desiriized_message) == 2:
+        if len(desiriized_message) == 2: #modificar 
             self._process_eof(desiriized_message)
         else:
-            logging.info(f"message does not comply with required format: {desiriized_message}")
+            self._process_data(desiriized_message)
         ack()
 
     def start(self):
