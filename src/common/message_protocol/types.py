@@ -16,12 +16,9 @@ class TransactionRecord:
     account: str
     to_bank: str
     to_account: str
-    amount_received: float
-    receiving_currency: str
     amount_paid: float
     payment_currency: str
     payment_format: str
-    is_laundering: bool
 
 class MsgType:
     TRANSACTION_RECORD = 1
