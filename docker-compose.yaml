@@ -1,21 +1,4 @@
 services:
-  aggregation_0:
-    build:
-      context: ./src/
-      dockerfile: aggregation/Dockerfile
-    container_name: aggregation_0
-    depends_on:
-    - join
-    environment:
-    - AGGREGATION_AMOUNT=1
-    - AGGREGATION_PREFIX=aggregation
-    - ID=0
-    - MOM_HOST=rabbitmq
-    - OUTPUT_QUEUE=join_queue
-    - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=1
-    - SUM_PREFIX=sum
-    - TOP_SIZE=3
   client_0:
     build:
       context: ./src/
@@ -47,6 +30,8 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
+    - AMOUNT_CURRENCY=1
+    - CURRENCY_PREFIX=CurrencyFilter
   
   rabbitmq:
     build:
