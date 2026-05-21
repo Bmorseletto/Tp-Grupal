@@ -39,13 +39,6 @@ def _recv_transaction_record(socket):
         _recv_sized(socket, external_serializer.UINT32_SIZE)
     )
     to_account = external_serializer.deserialize_string(_recv_sized(socket, to_account_size))
-    amount_received = external_serializer.deserialize_float(
-        _recv_sized(socket, external_serializer.FLOAT_SIZE)
-    )
-    receiving_currency_size = external_serializer.deserialize_uint32(
-        _recv_sized(socket, external_serializer.UINT32_SIZE)
-    )
-    receiving_currency = external_serializer.deserialize_string(_recv_sized(socket, receiving_currency_size))
     amount_paid = external_serializer.deserialize_float(
         _recv_sized(socket, external_serializer.FLOAT_SIZE)
     )
@@ -57,21 +50,15 @@ def _recv_transaction_record(socket):
         _recv_sized(socket, external_serializer.UINT32_SIZE)
     )
     payment_format = external_serializer.deserialize_string(_recv_sized(socket, payment_format_size))
-    is_laundering = external_serializer.deserialize_bool(
-        _recv_sized(socket, external_serializer.BOOL_SIZE)
-    )
     return TransactionRecord(
         timestamp=timestamp,
         from_bank=from_bank,
         account=account,
         to_bank=to_bank,
         to_account=to_account,
-        amount_received=amount_received,
-        receiving_currency=receiving_currency,
         amount_paid=amount_paid,
         payment_currency=payment_currency,
         payment_format=payment_format,
-        is_laundering=is_laundering,
     )
 
 def _recv_account_record(socket):
@@ -143,15 +130,11 @@ def _serialize_transaction_record(record: TransactionRecord):
             external_serializer.serialize_string(record.to_bank),
             external_serializer.serialize_uint32(len(record.to_account)),
             external_serializer.serialize_string(record.to_account),
-            external_serializer.serialize_float(record.amount_received),
-            external_serializer.serialize_uint32(len(record.receiving_currency)),
-            external_serializer.serialize_string(record.receiving_currency),
             external_serializer.serialize_float(record.amount_paid),
             external_serializer.serialize_uint32(len(record.payment_currency)),
             external_serializer.serialize_string(record.payment_currency),
             external_serializer.serialize_uint32(len(record.payment_format)),
-            external_serializer.serialize_string(record.payment_format),
-            external_serializer.serialize_bool(record.is_laundering),
+            external_serializer.serialize_string(record.payment_format)
         ]
     )
 
