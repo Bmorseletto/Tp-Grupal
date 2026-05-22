@@ -63,39 +63,33 @@ def _recv_transaction_record(socket):
     )
 
 def _recv_account_record(socket):
-    record_count = external_serializer.deserialize_uint32(
+    bank_name_size = external_serializer.deserialize_uint32(
         _recv_sized(socket, external_serializer.UINT32_SIZE)
     )
-    records = []
-    for _ in range(record_count):
-        bank_name_size = external_serializer.deserialize_uint32(
-            _recv_sized(socket, external_serializer.UINT32_SIZE)
-        )
-        bank_name = external_serializer.deserialize_string(_recv_sized(socket, bank_name_size))
-        bank_id_size = external_serializer.deserialize_uint32(
-            _recv_sized(socket, external_serializer.UINT32_SIZE)
-        )
-        bank_id = external_serializer.deserialize_string(_recv_sized(socket, bank_id_size))
-        account_number_size = external_serializer.deserialize_uint32(
-            _recv_sized(socket, external_serializer.UINT32_SIZE)
-        )
-        account_number = external_serializer.deserialize_string(_recv_sized(socket, account_number_size))
-        entity_id_size = external_serializer.deserialize_uint32(
-            _recv_sized(socket, external_serializer.UINT32_SIZE)
-        )
-        entity_id = external_serializer.deserialize_string(_recv_sized(socket, entity_id_size))
-        entity_name_size = external_serializer.deserialize_uint32(
-            _recv_sized(socket, external_serializer.UINT32_SIZE)
-        )
-        entity_name = external_serializer.deserialize_string(_recv_sized(socket, entity_name_size))
-        records.append(AccountRecord(
-            bank_name=bank_name,
-            bank_id=bank_id,
-            account_number=account_number,
-            entity_id=entity_id,
-            entity_name=entity_name,
-        ))
-    return records
+    bank_name = external_serializer.deserialize_string(_recv_sized(socket, bank_name_size))
+    bank_id_size = external_serializer.deserialize_uint32(
+        _recv_sized(socket, external_serializer.UINT32_SIZE)
+    )
+    bank_id = external_serializer.deserialize_string(_recv_sized(socket, bank_id_size))
+    account_number_size = external_serializer.deserialize_uint32(
+        _recv_sized(socket, external_serializer.UINT32_SIZE)
+    )
+    account_number = external_serializer.deserialize_string(_recv_sized(socket, account_number_size))
+    entity_id_size = external_serializer.deserialize_uint32(
+        _recv_sized(socket, external_serializer.UINT32_SIZE)
+    )
+    entity_id = external_serializer.deserialize_string(_recv_sized(socket, entity_id_size))
+    entity_name_size = external_serializer.deserialize_uint32(
+        _recv_sized(socket, external_serializer.UINT32_SIZE)
+    )
+    entity_name = external_serializer.deserialize_string(_recv_sized(socket, entity_name_size))
+    return AccountRecord(
+        bank_name=bank_name,
+        bank_id=bank_id,
+        account_number=account_number,
+        entity_id=entity_id,
+        entity_name=entity_name,
+    )
 
 
 def _recv_empty(socket):
