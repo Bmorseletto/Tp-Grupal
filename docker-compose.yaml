@@ -5,7 +5,7 @@ services:
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-    - sum_0
+    - currency_filter_0
     environment:
     - TRANSACTIONS_INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output_0.csv
@@ -31,6 +31,51 @@ services:
     - SERVER_PORT=5678
     - AMOUNT_CURRENCY=1
     - CURRENCY_PREFIX=CurrencyFilter
+  currency_filter_0:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: currency_filter_0
+    depends_on:
+      - dollar_amount_filter_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - AMOUNT_CURRENCY=1
+      - FILTER_AMOUNT=1
+      - FILTER_PREFIX=CurrencyFilter
+      - FILTER_Q1_AMOUNT=1
+      - FILTER_Q1_PREFIX=DollarAmtFilter
+      - PYTHONUNBUFFERED=1
+  dollar_amount_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q1/Dockerfile
+    container_name: dollar_amount_filter_0
+    depends_on:
+      - query_1_aggregator
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - OUTPUT_QUEUE=Query1_Aggregator
+      - FILTER_AMOUNT=1
+      - FILTER_PREFIX=DollarAmtFilter
+      - PYTHONUNBUFFERED=1
+  query_1_aggregator:
+    build:
+      context: ./src/
+      dockerfile: agg_q1/Dockerfile
+    container_name: query_1_aggregator
+    depends_on:
+      - gateway
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - INPUT_QUEUE=Query1_Aggregator
+      - OUTPUT_QUEUE=transactions_queue
+      - Q1_FILTER_AMOUNT=1
+      - Q1_FILTER_PREFIX=DollarAmtFilter
+      - PYTHONUNBUFFERED=1
   
   rabbitmq:
     build:
