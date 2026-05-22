@@ -1,4 +1,5 @@
 from asyncio import IncompleteReadError
+import logging
 
 from . import external_serializer
 from .types import AccountRecord, MsgType, TransactionRecord 
@@ -100,12 +101,32 @@ def _recv_account_record(socket):
 def _recv_empty(socket):
     return None
 
+def _recv_results(socket):
+    results_count = external_serializer.deserialize_uint32(
+        _recv_sized(socket, external_serializer.UINT32_SIZE)
+    )
+    results = []
+    for _ in range(results_count):
+        result_elements = external_serializer.deserialize_uint32(
+            _recv_sized(socket, external_serializer.UINT32_SIZE)
+            )
+        result = []
+        for _ in range(result_elements):
+            element_size = external_serializer.deserialize_uint32(
+            _recv_sized(socket, external_serializer.UINT32_SIZE)
+            )
+            element = external_serializer.deserialize_string(_recv_sized(socket, element_size))
+            logging.info(f"Client query element: {element}")
+            result.append(element)
+        results.append(result)
+    return results
 
 RECV_MSG_HANDLERS = {
     MsgType.TRANSACTION_RECORD: _recv_transaction_record,
     MsgType.ACCOUNT_RECORD: _recv_account_record,
     MsgType.ACK: _recv_empty,
     MsgType.END_OF_RECODS: _recv_empty,
+    MsgType.RESULTS: _recv_results
 }
 
 
@@ -161,6 +182,18 @@ def _serialize_account_record(record: AccountRecord):
         ]
     )
 
+def _serialize_results(result:dict):
+    list = []
+    for value in result.values():
+        print(f"value {value}", flush=True)
+        str_value = str(value)
+        list.append(external_serializer.serialize_uint32(len(str_value)))
+        list.append(external_serializer.serialize_string(str_value))
+    print(f"{list}", flush=True)
+    return b"".join(
+       list
+    )
+
 
 def _send_account_record(socket, records):
     msg = external_serializer.serialize_uint32(MsgType.ACCOUNT_RECORD)
@@ -177,12 +210,22 @@ def _send_ack(socket):
 def _send_end_of_records(socket):
     socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RECODS))
 
+def _send_results(socket, results):
+    msg = external_serializer.serialize_uint32(MsgType.RESULTS)
+    msg +=  external_serializer.serialize_uint32(len(results))
+    for result in results:
+        msg += external_serializer.serialize_uint32(len(result))
+        msg += _serialize_results(result)
+    logging.info(f"MESSAGE {msg}")
+    socket.sendall(msg)
+
 
 SEND_MSG_HANDLERS = {
     MsgType.TRANSACTION_RECORD: _send_transaction_record,
     MsgType.ACCOUNT_RECORD: _send_account_record,
     MsgType.ACK: _send_ack,
     MsgType.END_OF_RECODS: _send_end_of_records,
+    MsgType.RESULTS: _send_results
 }
 
 

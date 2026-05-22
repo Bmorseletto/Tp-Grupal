@@ -8,7 +8,7 @@ import zlib
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
-OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
+#OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
 FILTER_PREFIX = os.environ["FILTER_PREFIX"]
 FILTER_Q1_AMOUNT = int(os.environ["FILTER_Q1_AMOUNT"])
@@ -22,28 +22,30 @@ class CurrencyFilter:
         self.input_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST, FILTER_PREFIX, [f"{FILTER_PREFIX}",f"{ID}"]
         )
-        self.output_exchange_q1 = middleware.MessageMiddlewareQueueRabbitMQ(
+        self.output_exchange_q1 = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST, FILTER_Q1_PREFIX,  [FILTER_Q1_PREFIX] + [str(i) for i in range(FILTER_Q1_AMOUNT)]
         )
         #TODO: Agregar resto de los exchanges o routing keys paralas otras queries
 
-    def _process_data(self, transaction): #TODO: se puede refactorizar esta funciona peuqeñas funciones para cada query
-        if transaction["Payment Currency"] == "US Dollar":
+    def _process_data(self, transaction): #TODO: se puede refactorizar esta funciona a pequeñas funciones para cada query
+        if transaction["payment_currency"] == "US Dollar":
             output = {
-                "Account" : transaction["Account"],
-                "To Account" : transaction["To Account"],
-                "Amt Paid":  transaction["Amt Paid"]
+                "account" : transaction["account"],
+                "to_account" : transaction["to_account"],
+                "amount_paid":  transaction["amount_paid"]
             }
-            routing_key = zlib.crc32(output["Account"].encode('utf-8')) % FILTER_Q1_AMOUNT #Usamos la account de origen y la cantidad de filtros Q1 para routear el mensaje
-            self.output_exchange_q1.send_by_key(message_protocol.internal.serialize(output), routing_key)
+            routing_key = zlib.crc32(output["account"].encode('utf-8')) % FILTER_Q1_AMOUNT #Usamos la account de origen y la cantidad de filtros Q1 para routear el mensaje
+            self.output_exchange_q1.send_by_key(message_protocol.internal.serialize(output), str(routing_key))
         
 
     def _process_eof(self, desiriized_message):
-        self.output_exchange_q1.send(message_protocol.internal.serialize({"nodo_id":ID, "client_id":desiriized_message["client_id"]}))
+        logging.info("sending eof to next node")
+        self.output_exchange_q1.send_by_key(message_protocol.internal.serialize({"nodo_id":ID, "client_id":desiriized_message[0]}), FILTER_Q1_PREFIX)
 
     def process_messsage(self, message, ack, nack):
         desiriized_message = message_protocol.internal.deserialize(message)
-        if len(desiriized_message) == 2:
+        logging.info(f"MESSAGE: {desiriized_message}")
+        if len(desiriized_message) == 1:
             self._process_eof(desiriized_message)
         else:
             self._process_data(desiriized_message)

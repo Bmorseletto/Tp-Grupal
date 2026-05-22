@@ -39,6 +39,7 @@ class Client:
         with open(input_file, newline="\n") as csvfile:
             csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
             for row in csv_reader:
+                logging.info(f"ROW: {row}")
                 (
                     timestamp,
                     og_bank,
@@ -52,39 +53,45 @@ class Client:
                     payment_format,
                     is_laundering,
                 ) = row
-                message_protocol.external.send_msg(
-                    self.server_socket,
-                    message_protocol.external.MsgType.TRANSACTION_RECORD,
+                transaction = message_protocol.types.TransactionRecord(
                     timestamp,
                     og_bank,
                     og_account,
                     dest_bank,
                     dest_account,
-                    amt_paid,
+                    float(amt_paid),
                     payment_currency,
                     payment_format,
                 )
+                message_protocol.external.send_msg(
+                    self.server_socket,
+                    message_protocol.external.MsgType.TRANSACTION_RECORD,
+                    transaction
+                )
+                logging.info("awating Transaction ACK")
                 message_protocol.external.recv_msg(self.server_socket)
-
+        logging.info("Sending transaction EOF")
         message_protocol.external.send_msg(
             self.server_socket, message_protocol.external.MsgType.END_OF_RECODS
         )
+        logging.info("awating ACK")
         message_protocol.external.recv_msg(self.server_socket)
 
     def recv_results(self, output_file):
-        logging.info("Receiving fruit top")
+        logging.info("Receiving query result")
         results = message_protocol.external.recv_msg(self.server_socket)
+        logging.info("Received query result")
         message_protocol.external.send_msg(
             self.server_socket, message_protocol.external.MsgType.ACK
         )
-
+        logging.info(f"RESULTS: {results}")
         if results[0] != message_protocol.external.MsgType.RESULTS:
             raise TypeError("Expected a RESULTS message")
 
         with open(output_file, "w") as csvfile:
             csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-            for fruit_item in results[1]:
-                csv_writer.writerow(fruit_item)
+            for query_item in results[1]:
+                csv_writer.writerow(query_item)
 
 
 def main() -> int:
@@ -93,11 +100,14 @@ def main() -> int:
 
     try:
         client.connect(SERVER_HOST, SERVER_PORT)
+        logging.info("Connected to server")
         client.send_transaction_records(TRANSACTIONS_INPUT_FILE)
+        logging.info("transacftions sent")
         client.recv_results(OUTPUT_FILE)
-    except socket.error:
+        logging.info("results recived")
+    except socket.error as e:
         if not client.closed:
-            logging.error("The connection with the server was lost")
+            logging.error(f"The connection with the server was lost {e}")
             return 1
     except Exception as e:
         logging.error(e)

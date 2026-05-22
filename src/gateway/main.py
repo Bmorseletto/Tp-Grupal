@@ -3,6 +3,7 @@ import logging
 import socket
 import signal
 import multiprocessing
+import zlib
 import message_handler
 from common import middleware, message_protocol
 
@@ -11,7 +12,7 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
-AMOUNT_CURRENCY_FILTERS = os.environ["AMOUNT_CURRENCY"]
+AMOUNT_CURRENCY_FILTERS = int(os.environ["AMOUNT_CURRENCY"])
 CURRENCY_PREFIX = os.environ["CURRENCY_PREFIX"]
 
 
@@ -20,21 +21,23 @@ def handle_client_request(client_socket, message_handler):
     data_output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST, CURRENCY_PREFIX, routing_keys
         )
-
     try:
         while True:
             message = message_protocol.external.recv_msg(client_socket)
-
+            print(f"{message}", flush=True)
+            logging.info(f"Message: {message}")
             if message[0] == message_protocol.external.MsgType.TRANSACTION_RECORD:
+                logging.info(f"Processing Transaction Record")
                 serialized_message = message_handler.serialize_data_message(message[1])
-                data_output_exchange.send(serialized_message)
+                routing_key = str(zlib.crc32(message[1].account.encode('utf-8')) % AMOUNT_CURRENCY_FILTERS)
+                data_output_exchange.send_by_key(serialized_message, routing_key)
                 message_protocol.external.send_msg(
                     client_socket, message_protocol.external.MsgType.ACK
                 )
 
             if message[0] == message_protocol.external.MsgType.END_OF_RECODS:
                 serialized_message = message_handler.serialize_eof_message(message[1])
-                data_output_exchange.send(serialized_message)
+                data_output_exchange.send_by_key(serialized_message, CURRENCY_PREFIX)
                 message_protocol.external.send_msg(
                     client_socket, message_protocol.external.MsgType.ACK
                 )
@@ -54,10 +57,8 @@ def handle_client_response(client_list):
         client_index = 0
         try:
             for [message_handler_instance, client_socket] in client_list:
-                deserialized_message = (
-                    message_handler_instance.deserialize_result_message(message)
-                )
-
+                deserialized_message = [message_handler_instance.deserialize_result_message(message)] 
+                logging.info(f"deserialized_message: {deserialized_message}")
                 if not deserialized_message:
                     client_index += 1
                     continue
@@ -121,6 +122,7 @@ def main():
                             handle_client_request,
                             (client_socket, message_handler_instance),
                         )
+                        logging.info(f"Handeling Client")
                     except socket.error:
                         if sigterm_received.value == 0:
                             logging.error("The connection with the client was lost")

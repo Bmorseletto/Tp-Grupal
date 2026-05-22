@@ -7,8 +7,8 @@ from common import middleware, message_protocol
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
-Q1_FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
-Q1_FILTER_PREFIX = os.environ["FILTER_PREFIX"]
+Q1_FILTER_AMOUNT = int(os.environ["Q1_FILTER_AMOUNT"])
+Q1_FILTER_PREFIX = os.environ["Q1_FILTER_PREFIX"]
 
 class JoinFilterQ1:
 
@@ -33,7 +33,9 @@ class JoinFilterQ1:
         self.worker_finished_with_client[client_id].add(nodo_id)
         if len(self.worker_finished_with_client[client_id]) == Q1_FILTER_AMOUNT:
             for transaction in self.filtered_transactions:
-                self.output_queue.send(message_protocol.internal.serialize(transaction))
+                logging.info(f"sending transaction: {transaction}, to gateway")
+                self.output_queue.send(message_protocol.internal.serialize([client_id,transaction]))
+        logging.info(f"Q1 RESULTS TRANSACTIONS SENT")
 
     def process_messsage(self, message, ack, nack):
         desiriized_message = message_protocol.internal.deserialize(message)

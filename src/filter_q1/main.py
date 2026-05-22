@@ -24,11 +24,11 @@ class DollarAmtFilter:
         )
 
     def _process_data(self, transaction):
-        if transaction["Amt Paid"] < 50:
+        if transaction["amount_paid"] < 50:
             output = {
-                "Account" : transaction["Account"],
-                "To Account" : transaction["To Account"],
-                "Amt Paid":  transaction["Amt Paid"]
+                "account" : transaction["account"],
+                "to_account" : transaction["to_account"],
+                "amount_paid":  transaction["amount_paid"]
             }
             self.output_queue.send(message_protocol.internal.serialize(output))
         
