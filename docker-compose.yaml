@@ -76,6 +76,8 @@ services:
       - Q1_FILTER_AMOUNT=1
       - Q1_FILTER_PREFIX=DollarAmtFilter
       - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
   
   rabbitmq:
     build:

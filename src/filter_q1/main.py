@@ -26,6 +26,7 @@ class DollarAmtFilter:
     def _process_data(self, transaction):
         if transaction["amount_paid"] < 50:
             output = {
+                "client_id":  transaction["client_id"],
                 "account" : transaction["account"],
                 "to_account" : transaction["to_account"],
                 "amount_paid":  transaction["amount_paid"]
@@ -33,15 +34,16 @@ class DollarAmtFilter:
             self.output_queue.send(message_protocol.internal.serialize(output))
         
 
-    def _process_eof(self, desiriized_message):
-        self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, "client_id":desiriized_message["client_id"]}))
+    def _process_eof(self, desirialized_message):
+        self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, "client_id":desirialized_message["client_id"]}))
 
     def process_messsage(self, message, ack, nack):
-        desiriized_message = message_protocol.internal.deserialize(message)
-        if len(desiriized_message) == 2:
-            self._process_eof(desiriized_message)
+        desirialized_message = message_protocol.internal.deserialize(message)
+        logging.info(f"MESSAGE {desirialized_message}")
+        if len(desirialized_message) == 2:
+            self._process_eof(desirialized_message)
         else:    
-            self._process_data(desiriized_message)
+            self._process_data(desirialized_message)
         ack()
 
     def start(self):

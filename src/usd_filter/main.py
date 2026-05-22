@@ -30,6 +30,7 @@ class CurrencyFilter:
     def _process_data(self, transaction): #TODO: se puede refactorizar esta funciona a pequeñas funciones para cada query
         if transaction["payment_currency"] == "US Dollar":
             output = {
+                "client_id": transaction["client_id"],
                 "account" : transaction["account"],
                 "to_account" : transaction["to_account"],
                 "amount_paid":  transaction["amount_paid"]

@@ -57,7 +57,7 @@ def handle_client_response(client_list):
         client_index = 0
         try:
             for [message_handler_instance, client_socket] in client_list:
-                deserialized_message = [message_handler_instance.deserialize_result_message(message)] 
+                deserialized_message = message_handler_instance.deserialize_result_message(message) 
                 logging.info(f"deserialized_message: {deserialized_message}")
                 if not deserialized_message:
                     client_index += 1

@@ -1,6 +1,8 @@
 import os
 import logging
 import signal
+import csv
+
 
 from common import middleware, message_protocol
 
@@ -19,11 +21,18 @@ class JoinFilterQ1:
         self.output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
             MOM_HOST, OUTPUT_QUEUE
         )
-        self.filtered_transactions = []
+        self.filtered_transactions = {}
         self.worker_finished_with_client = {}
 
-    def _process_data(self, transaction):
-        self.filtered_transactions.append(transaction)
+    def _process_data(self, transaction:dict):
+        logging.info(f"transaction {transaction}")
+        client_id= transaction.pop("client_id")
+        logging.info(f"processing data OF {client_id}")
+        with open(f"/output/q1_{client_id}.csv", "a") as csvfile:
+            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+            csv_writer.writerow(transaction.values())
+            logging.info(f"writing {transaction} down")
+       
 
     def _process_eof(self, eof_message):
         client_id=eof_message["client_id"] 
@@ -32,10 +41,22 @@ class JoinFilterQ1:
             self.worker_finished_with_client[client_id] = set()
         self.worker_finished_with_client[client_id].add(nodo_id)
         if len(self.worker_finished_with_client[client_id]) == Q1_FILTER_AMOUNT:
-            for transaction in self.filtered_transactions:
-                logging.info(f"sending transaction: {transaction}, to gateway")
-                self.output_queue.send(message_protocol.internal.serialize([client_id,transaction]))
-        logging.info(f"Q1 RESULTS TRANSACTIONS SENT")
+            with open(f"/output/q1_{client_id}.csv", "r", newline="") as csvfile:
+                csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
+                results = []
+                for transaction in csv_reader:
+                    logging.info(f"sending transaction: {transaction}, to gateway")
+                    values = {
+                        "account" : transaction[0],
+                        "to_account" : transaction[1],
+                        "amount_paid":  transaction[2]
+                    }
+                    results.append(values)
+                self.output_queue.send(message_protocol.internal.serialize([client_id,results]))
+            os.remove(f"/output/q1_{client_id}.csv")
+            logging.info(f"Q1 RESULTS TRANSACTIONS SENT")
+
+
 
     def process_messsage(self, message, ack, nack):
         desiriized_message = message_protocol.internal.deserialize(message)
@@ -54,15 +75,18 @@ class JoinFilterQ1:
         self.input_queue.close()
         self.output_queue.close()
 def main():
-    logging.basicConfig(level=logging.INFO)
-    join_filter = JoinFilterQ1()
-    signal.signal(
-        signal.SIGTERM,
-        lambda signum, frame: join_filter.stop(),
-    )
-    join_filter.start()
-    join_filter.close()
-    return 0
+    try:
+        logging.basicConfig(level=logging.INFO)
+        join_filter = JoinFilterQ1()
+        signal.signal(
+            signal.SIGTERM,
+            lambda signum, frame: join_filter.stop(),
+        )
+        join_filter.start()
+        join_filter.close()
+        return 0
+    except Exception as e:
+            logging.error(f"error: {e}")
 
 
 if __name__ == "__main__":
