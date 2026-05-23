@@ -12,8 +12,11 @@ FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
 FILTER_PREFIX = os.environ["FILTER_PREFIX"]
 DONE = True
 WORKING = False
+CLIENT_ID_KEY = "client_id"
+BANK_KEY = "from_bank"
+AMMOUNT_PAID_KEY = "amount_paid"
 
-class DollarAmtFilter:
+class MaxTransactionFilter:
 
     def __init__(self):
         self.input_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
@@ -22,20 +25,24 @@ class DollarAmtFilter:
         self.output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
             MOM_HOST, OUTPUT_QUEUE
         )
+        self.max_transaction_per_bank = {}
 
     def _process_data(self, transaction):
-        if transaction["amount_paid"] < 50:
-            output = {
-                "client_id":  transaction["client_id"],
-                "account" : transaction["account"],
-                "to_account" : transaction["to_account"],
-                "amount_paid":  transaction["amount_paid"]
-            }
-            self.output_queue.send(message_protocol.internal.serialize(output))
-        
+        client_id = transaction.pop(CLIENT_ID_KEY)
+        bank_id = transaction[BANK_KEY]
+        if client_id not in self.max_transaction_per_bank.keys():
+            self.max_transaction_per_bank[client_id] = {}
+        if bank_id in self.max_transaction_per_bank[client_id].keys():
+            if self.max_transaction_per_bank[client_id][bank_id][AMMOUNT_PAID_KEY] >= transaction[AMMOUNT_PAID_KEY]:
+                return
+        logging.info(f"TRANSDACTION {transaction}")
+        self.max_transaction_per_bank[client_id][bank_id] = transaction
+    
 
     def _process_eof(self, desirialized_message):
-        self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, "client_id":desirialized_message["client_id"]}))
+        results = list(self.max_transaction_per_bank[desirialized_message[CLIENT_ID_KEY]].values())
+        logging.info(f"Sending max values {results}, to {OUTPUT_QUEUE}")
+        self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, CLIENT_ID_KEY:desirialized_message[CLIENT_ID_KEY], "results": results} ))
 
     def process_messsage(self, message, ack, nack):
         desirialized_message = message_protocol.internal.deserialize(message)
@@ -61,7 +68,7 @@ class DollarAmtFilter:
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    dollar_amt_filter = DollarAmtFilter()
+    dollar_amt_filter = MaxTransactionFilter()
     signal.signal(
         signal.SIGTERM,
         lambda signum, frame: dollar_amt_filter.stop(),

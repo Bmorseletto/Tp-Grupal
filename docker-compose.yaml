@@ -46,6 +46,8 @@ services:
       - FILTER_PREFIX=CurrencyFilter
       - FILTER_Q1_AMOUNT=1
       - FILTER_Q1_PREFIX=DollarAmtFilter
+      - FILTER_Q2_AMOUNT=1
+      - FILTER_Q2_PREFIX=MaxTransactionFilter
       - PYTHONUNBUFFERED=1
   dollar_amount_filter_0:
     build:
@@ -78,7 +80,37 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
-  
+  query_2_aggregator:
+    build:
+      context: ./src/
+      dockerfile: agg_q2/Dockerfile
+    container_name: query_2_aggregator
+    depends_on:
+      - gateway
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - INPUT_QUEUE=Query2_Aggregator
+      - OUTPUT_QUEUE=transactions_queue
+      - Q2_FILTER_AMOUNT=1
+      - Q2_FILTER_PREFIX=MaxTransactionFilter
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  max_transaction_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q2/Dockerfile
+    container_name: max_transaction_filter_0
+    depends_on:
+      - query_2_aggregator
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - OUTPUT_QUEUE=Query2_Aggregator
+      - FILTER_AMOUNT=1
+      - FILTER_PREFIX=MaxTransactionFilter
+      - PYTHONUNBUFFERED=1
   rabbitmq:
     build:
       context: ./src/rabbitmq
