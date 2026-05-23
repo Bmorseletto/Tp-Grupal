@@ -34,16 +34,16 @@ class DollarAmtFilter:
             self.output_queue.send(message_protocol.internal.serialize(output))
         
 
-    def _process_eof(self, desirialized_message):
-        self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, "client_id":desirialized_message["client_id"]}))
+    def _process_eof(self, deserialized_message):
+        self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, "client_id":deserialized_message["client_id"]}))
 
     def process_messsage(self, message, ack, nack):
-        desirialized_message = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {desirialized_message}")
-        if len(desirialized_message) == 2:
-            self._process_eof(desirialized_message)
+        deserialized_message = message_protocol.internal.deserialize(message)
+        logging.info(f"MESSAGE {deserialized_message}")
+        if len(deserialized_message) == 2:
+            self._process_eof(deserialized_message)
         else:    
-            self._process_data(desirialized_message)
+            self._process_data(deserialized_message)
         ack()
 
     def start(self):

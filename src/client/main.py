@@ -38,6 +38,7 @@ class Client:
         logging.info("Sending transaction records")
         with open(input_file, newline="\n") as csvfile:
             csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
+            _headers = next(csv_reader)  # Skip the header row
             for row in csv_reader:
                 logging.info(f"ROW: {row}")
                 (

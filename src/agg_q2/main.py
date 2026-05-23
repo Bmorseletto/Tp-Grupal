@@ -45,7 +45,7 @@ class JoinFilterQ2:
                     logging.info(f"writing {result} down")
             if len(self.worker_finished_with_client[client_id]) == Q2_FILTER_AMOUNT and ACCOUNTS_EOF:
                 results=self._relate_bank_id_bank_name(client_id)
-                self.output_queue.send(message_protocol.internal.serialize([client_id,results]))
+                # self.output_queue.send(message_protocol.internal.serialize([client_id,results]))
                 os.remove(PATH_TRANSACTIONS+f"{client_id}.csv")
                 logging.info(f"Q2 RESULTS TRANSACTIONS SENT")
         except Exception as e:
