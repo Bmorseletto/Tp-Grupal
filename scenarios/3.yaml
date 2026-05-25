@@ -79,7 +79,7 @@ services:
       - ID=0
       - MOM_HOST=rabbitmq
       - AMOUNT_CURRENCY=2
-      - FILTER_AMOUNT=1
+      - FILTER_AMOUNT=2
       - FILTER_PREFIX=CurrencyFilter
       - FILTER_Q1_AMOUNT=3
       - FILTER_Q1_PREFIX=DollarAmtFilter
@@ -99,7 +99,7 @@ services:
       - ID=1
       - MOM_HOST=rabbitmq
       - AMOUNT_CURRENCY=2
-      - FILTER_AMOUNT=1
+      - FILTER_AMOUNT=2
       - FILTER_PREFIX=CurrencyFilter
       - FILTER_Q1_AMOUNT=3
       - FILTER_Q1_PREFIX=DollarAmtFilter
@@ -117,8 +117,9 @@ services:
       - ID=0
       - MOM_HOST=rabbitmq
       - OUTPUT_QUEUE=Query1_Aggregator
-      - FILTER_AMOUNT=1
+      - FILTER_AMOUNT=3
       - FILTER_PREFIX=DollarAmtFilter
+      - UPSTREAM_AMOUNT=2
       - PYTHONUNBUFFERED=1
   dollar_amount_filter_1:
     build:
@@ -131,8 +132,9 @@ services:
       - ID=1
       - MOM_HOST=rabbitmq
       - OUTPUT_QUEUE=Query1_Aggregator
-      - FILTER_AMOUNT=1
+      - FILTER_AMOUNT=3
       - FILTER_PREFIX=DollarAmtFilter
+      - UPSTREAM_AMOUNT=2
       - PYTHONUNBUFFERED=1
   dollar_amount_filter_2:
     build:
@@ -145,8 +147,9 @@ services:
       - ID=2
       - MOM_HOST=rabbitmq
       - OUTPUT_QUEUE=Query1_Aggregator
-      - FILTER_AMOUNT=1
+      - FILTER_AMOUNT=3
       - FILTER_PREFIX=DollarAmtFilter
+      - UPSTREAM_AMOUNT=2
       - PYTHONUNBUFFERED=1
   query_1_aggregator:
     build:
@@ -160,7 +163,7 @@ services:
       - MOM_HOST=rabbitmq
       - INPUT_QUEUE=Query1_Aggregator
       - OUTPUT_QUEUE=transactions_queue
-      - Q1_FILTER_AMOUNT=1
+      - Q1_FILTER_AMOUNT=3
       - Q1_FILTER_PREFIX=DollarAmtFilter
       - PYTHONUNBUFFERED=1
     volumes:
@@ -195,6 +198,7 @@ services:
       - OUTPUT_QUEUE=Query2_Aggregator
       - FILTER_AMOUNT=1
       - FILTER_PREFIX=MaxTransactionFilter
+      - UPSTREAM_AMOUNT=2
       - PYTHONUNBUFFERED=1
   rabbitmq:
     build:
@@ -212,4 +216,3 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
-  

@@ -191,8 +191,9 @@ def _start_consuming(message_middleware, on_message_callback):
     def callback(ch, method, properties, body):
         def ack():
             ch.basic_ack(delivery_tag=method.delivery_tag)
-        message_middleware.set_delivery_tag(method.delivery_tag) 
+        message_middleware.set_delivery_tag(method.delivery_tag)
         on_message_callback(body,ack, ch.basic_nack)
+    message_middleware._channel.basic_qos(prefetch_count=1)
     consumer_tag = message_middleware._channel.basic_consume(queue=message_middleware._queue_name,on_message_callback= callback)
     message_middleware.set_consumer_tag(consumer_tag)
     message_middleware._channel.start_consuming()

@@ -10,6 +10,7 @@ MOM_HOST = os.environ["MOM_HOST"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
 FILTER_PREFIX = os.environ["FILTER_PREFIX"]
+UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 DONE = True
 WORKING = False
 
@@ -22,6 +23,7 @@ class DollarAmtFilter:
         self.output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
             MOM_HOST, OUTPUT_QUEUE
         )
+        self.eof_count = {}
 
     def _process_data(self, transaction):
         if transaction["amount_paid"] < 50:
@@ -34,11 +36,16 @@ class DollarAmtFilter:
             self.output_queue.send(message_protocol.internal.serialize(output))
 
     def _process_eof(self, deserialized_message):
+        client_id = deserialized_message["client_id"]
+        self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
+        if self.eof_count[client_id] < UPSTREAM_AMOUNT:
+            return
         self.output_queue.send(
             message_protocol.internal.serialize(
-                {"nodo_id": ID, "client_id": deserialized_message["client_id"]}
+                {"nodo_id": ID, "client_id": client_id}
             )
         )
+        del self.eof_count[client_id]
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
