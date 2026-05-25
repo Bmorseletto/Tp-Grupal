@@ -119,8 +119,10 @@ RECV_MSG_HANDLERS = {
     MsgType.TRANSACTION_RECORD: _recv_transaction_record,
     MsgType.ACCOUNT_RECORD: _recv_account_record,
     MsgType.ACK: _recv_empty,
-    MsgType.END_OF_RECODS: _recv_empty,
-    MsgType.RESULTS: _recv_results
+    MsgType.END_OF_TRANSACTIONS: _recv_empty,
+    MsgType.RESULTS: _recv_results,
+    MsgType.END_OF_ACCOUNTS: _recv_empty,
+    MsgType.END_OF_RESULTS: _recv_empty
 }
 
 
@@ -189,11 +191,9 @@ def _serialize_results(result:dict):
     )
 
 
-def _send_account_record(socket, records):
+def _send_account_record(socket, record):
     msg = external_serializer.serialize_uint32(MsgType.ACCOUNT_RECORD)
-    msg += external_serializer.serialize_uint32(len(records))
-    for record in records:
-        msg += _serialize_account_record(record)
+    msg += _serialize_account_record(record)
     socket.sendall(msg)
 
 
@@ -201,8 +201,14 @@ def _send_ack(socket):
     socket.sendall(external_serializer.serialize_uint32(MsgType.ACK))
 
 
-def _send_end_of_records(socket):
-    socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RECODS))
+def _send_end_of_transactions(socket):
+    socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_TRANSACTIONS))
+
+def _send_end_of_accounts(socket):
+    socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_ACCOUNTS))
+
+def _send_end_of_results(socket):
+    socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RESULTS))
 
 def _send_results(socket, results):
     msg = external_serializer.serialize_uint32(MsgType.RESULTS)
@@ -218,8 +224,10 @@ SEND_MSG_HANDLERS = {
     MsgType.TRANSACTION_RECORD: _send_transaction_record,
     MsgType.ACCOUNT_RECORD: _send_account_record,
     MsgType.ACK: _send_ack,
-    MsgType.END_OF_RECODS: _send_end_of_records,
-    MsgType.RESULTS: _send_results
+    MsgType.END_OF_TRANSACTIONS: _send_end_of_transactions,
+    MsgType.RESULTS: _send_results,
+    MsgType.END_OF_ACCOUNTS: _send_end_of_accounts,
+    MsgType.END_OF_RESULTS: _send_end_of_results
 }
 
 

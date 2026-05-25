@@ -32,9 +32,20 @@ class Transaction:
     payment_currency: str
     payment_format: str
 
+@dataclass
+class AccountInfo:
+    client_id : str
+    bank_name: str
+    bank_id: str
+    account_number: str
+    entity_id: str
+    entity_name: str
+
 class MsgType:
     TRANSACTION_RECORD = 1
     ACCOUNT_RECORD = 2
     ACK = 3
-    END_OF_RECODS = 4
+    END_OF_TRANSACTIONS = 4
     RESULTS = 5
+    END_OF_ACCOUNTS = 6
+    END_OF_RESULTS = 7

@@ -12,14 +12,20 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
+OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 AMOUNT_CURRENCY_FILTERS = int(os.environ["AMOUNT_CURRENCY"])
 CURRENCY_PREFIX = os.environ["CURRENCY_PREFIX"]
+
+AMOUNT_RESULTS = 2
 
 
 def handle_client_request(client_socket, message_handler):
     routing_keys = [CURRENCY_PREFIX] + [str(i) for i in range(AMOUNT_CURRENCY_FILTERS)]
     data_output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST, CURRENCY_PREFIX, routing_keys
+        )
+    accounts_output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
+            MOM_HOST, OUTPUT_QUEUE
         )
     try:
         while True:
@@ -28,40 +34,62 @@ def handle_client_request(client_socket, message_handler):
             logging.info(f"Message: {message}")
             if message[0] == message_protocol.external.MsgType.TRANSACTION_RECORD:
                 logging.info(f"Processing Transaction Record")
-                serialized_message = message_handler.serialize_data_message(message[1])
+                serialized_message = message_handler.serialize_transaction_message(message[1])
                 routing_key = str(zlib.crc32(message[1].account.encode('utf-8')) % AMOUNT_CURRENCY_FILTERS)
                 data_output_exchange.send_by_key(serialized_message, routing_key)
                 message_protocol.external.send_msg(
                     client_socket, message_protocol.external.MsgType.ACK
                 )
 
-            if message[0] == message_protocol.external.MsgType.END_OF_RECODS:
+            if message[0] == message_protocol.external.MsgType.ACCOUNT_RECORD:
+                logging.info(f"Processing Account Record")
+                serialized_message = message_handler.serialize_account_message(message[1])
+                accounts_output_queue.send(serialized_message)
+                message_protocol.external.send_msg(
+                    client_socket, message_protocol.external.MsgType.ACK
+                )
+
+            if message[0] == message_protocol.external.MsgType.END_OF_TRANSACTIONS:
+                logging.info("Processing Transactions EOF")
                 serialized_message = message_handler.serialize_eof_message(message[1])
                 data_output_exchange.send_by_key(serialized_message, CURRENCY_PREFIX)
                 message_protocol.external.send_msg(
                     client_socket, message_protocol.external.MsgType.ACK
                 )
-                return
+
+            elif message[0] == message_protocol.external.MsgType.END_OF_ACCOUNTS:
+                logging.info("Processing Accounts EOF")
+                serialized_message = message_handler.serialize_eof_message(message[1])
+                accounts_output_queue.send(serialized_message)
+                message_protocol.external.send_msg(
+                    client_socket, message_protocol.external.MsgType.ACK
+                )
     except socket.error:
         logging.error("The connection with the server was lost")
     except Exception as e:
         logging.error(e)
     finally:
         data_output_exchange.close()
+        accounts_output_queue.close()
 
 
-def handle_client_response(client_list):
+def handle_client_response(client_list, results_count):
     input_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, INPUT_QUEUE)
 
     def _consume_result(message, ack, nack):
         client_index = 0
         try:
             for [message_handler_instance, client_socket] in client_list:
-                deserialized_message = message_handler_instance.deserialize_result_message(message) 
+                client_id, deserialized_message = message_handler_instance.deserialize_result_message(message) 
                 logging.info(f"deserialized_message: {deserialized_message}")
                 if not deserialized_message:
                     client_index += 1
                     continue
+
+                if client_id not in results_count:
+                    results_count[client_id] = 0
+
+                print(f"RECV RESULTS FROM {client_id} | amount: {results_count[client_id]}")
 
                 message_protocol.external.send_msg(
                     client_socket,
@@ -69,8 +97,16 @@ def handle_client_response(client_list):
                     deserialized_message,
                 )
                 message_protocol.external.recv_msg(client_socket)
+                results_count[client_id] += 1
+
+                if results_count[client_id] >= AMOUNT_RESULTS:
+                    message_protocol.external.send_msg(
+                        client_socket,
+                        message_protocol.external.MsgType.END_OF_RESULTS,
+                    )
+                    client_list.pop(client_index)
+                    del results_count[client_id]
                 break
-            client_list.pop(client_index)
             ack()
         except socket.error:
             logging.error("The connection with the server was lost")
@@ -97,9 +133,10 @@ def main():
 
     with multiprocessing.Manager() as manager:
         client_list = manager.list()
+        results_count = {}
         sigterm_received = manager.Value("c_short", 0)
         with multiprocessing.Pool(processes=os.process_cpu_count()) as processes_pool:
-            processes_pool.apply_async(handle_client_response, (client_list,))
+            processes_pool.apply_async(handle_client_response, (client_list, results_count))
 
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
                 logging.info("Listening to connections")

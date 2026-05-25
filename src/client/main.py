@@ -7,6 +7,7 @@ import signal
 from common import message_protocol
 
 TRANSACTIONS_INPUT_FILE = os.environ["TRANSACTIONS_INPUT_FILE"]
+ACCOUNTS_INPUT_FILE = os.environ["ACCOUNTS_INPUT_FILE"]
 OUTPUT_FILE = os.environ["OUTPUT_FILE"]
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
@@ -34,9 +35,44 @@ class Client:
         if self.server_socket:
             self.server_socket.shutdown(socket.SHUT_RDWR)
 
-    def send_transaction_records(self, input_file):
+    def send_account_records(self, accounts_file):
+        logging.info("Sending Account records")
+        with open(accounts_file, newline="\n") as csvfile:
+            csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
+            _headers = next(csv_reader)  # Skip the header row
+            for row in csv_reader:
+                logging.info(f"ROW: {row}")
+                (
+                    bank_name,
+                    bank_id,
+                    accout_number,
+                    entity_id,
+                    entity_name,
+                ) = row
+                accounts = message_protocol.types.AccountRecord(
+                    bank_name,
+                    bank_id,
+                    accout_number,
+                    entity_id,
+                    entity_name,
+                )
+                message_protocol.external.send_msg(
+                    self.server_socket,
+                    message_protocol.external.MsgType.ACCOUNT_RECORD,
+                    accounts
+                )
+                logging.info("awating batch Accounts ACK")
+                message_protocol.external.recv_msg(self.server_socket)
+        logging.info("Sending Accounts EOF")
+        message_protocol.external.send_msg(
+            self.server_socket, message_protocol.external.MsgType.END_OF_ACCOUNTS
+        )
+        logging.info("awating EOF Accounts ACK")
+        message_protocol.external.recv_msg(self.server_socket)
+
+    def send_transaction_records(self, transactions_file):
         logging.info("Sending transaction records")
-        with open(input_file, newline="\n") as csvfile:
+        with open(transactions_file, newline="\n") as csvfile:
             csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
             _headers = next(csv_reader)  # Skip the header row
             for row in csv_reader:
@@ -73,27 +109,27 @@ class Client:
                 message_protocol.external.recv_msg(self.server_socket)
         logging.info("Sending transaction EOF")
         message_protocol.external.send_msg(
-            self.server_socket, message_protocol.external.MsgType.END_OF_RECODS
+            self.server_socket, message_protocol.external.MsgType.END_OF_TRANSACTIONS
         )
         logging.info("awating ACK")
         message_protocol.external.recv_msg(self.server_socket)
 
     def recv_results(self, output_file):
-        logging.info("Receiving query result")
-        results = message_protocol.external.recv_msg(self.server_socket)
-        logging.info("Received query result")
-        message_protocol.external.send_msg(
-            self.server_socket, message_protocol.external.MsgType.ACK
-        )
-        logging.info(f"RESULTS: {results}")
-        if results[0] != message_protocol.external.MsgType.RESULTS:
-            raise TypeError("Expected a RESULTS message")
-
-        with open(output_file, "w") as csvfile:
+        with open(output_file, "w", newline="") as csvfile:
             csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-            for query_item in results[1]:
-                csv_writer.writerow(query_item)
-
+            while True:
+                results = message_protocol.external.recv_msg(self.server_socket)
+                if results[0] == message_protocol.external.MsgType.RESULTS:
+                    for query_item in results[1]:
+                        csv_writer.writerow(query_item)
+                    message_protocol.external.send_msg(
+                        self.server_socket, message_protocol.external.MsgType.ACK
+                    )
+                elif results[0] == message_protocol.external.MsgType.END_OF_RESULTS:
+                    logging.info("Received all results")
+                    break
+                else:
+                    raise TypeError("Unexpected message type")
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO)
@@ -102,8 +138,12 @@ def main() -> int:
     try:
         client.connect(SERVER_HOST, SERVER_PORT)
         logging.info("Connected to server")
+
         client.send_transaction_records(TRANSACTIONS_INPUT_FILE)
         logging.info("transacftions sent")
+        client.send_account_records(ACCOUNTS_INPUT_FILE)
+        logging.info("accounts sent")
+
         client.recv_results(OUTPUT_FILE)
         logging.info("results recived")
     except socket.error as e:
