@@ -89,7 +89,8 @@ def handle_client_response(client_list, results_count):
                 if client_id not in results_count:
                     results_count[client_id] = 0
 
-                print(f"RECV RESULTS FROM {client_id} | amount: {results_count[client_id]}")
+                results_count[client_id] += 1
+                logging.info(f"Received results for {client_id} | amount of results from queries: {results_count[client_id]}")
 
                 message_protocol.external.send_msg(
                     client_socket,
@@ -97,16 +98,16 @@ def handle_client_response(client_list, results_count):
                     deserialized_message,
                 )
                 message_protocol.external.recv_msg(client_socket)
-                results_count[client_id] += 1
 
                 if results_count[client_id] >= AMOUNT_RESULTS:
+                    logging.info(f"Received all results from all queries")
                     message_protocol.external.send_msg(
                         client_socket,
                         message_protocol.external.MsgType.END_OF_RESULTS,
                     )
                     client_list.pop(client_index)
                     del results_count[client_id]
-                break
+                    break
             ack()
         except socket.error:
             logging.error("The connection with the server was lost")
