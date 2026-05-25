@@ -160,7 +160,6 @@ def main():
                             handle_client_request,
                             (client_socket, message_handler_instance),
                         )
-                        logging.info(f"Handeling Client")
                     except socket.error:
                         if sigterm_received.value == 0:
                             logging.error("The connection with the client was lost")
