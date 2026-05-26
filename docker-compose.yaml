@@ -50,6 +50,7 @@ services:
       - FILTER_Q1_PREFIX=DollarAmtFilter
       - FILTER_Q2_AMOUNT=1
       - FILTER_Q2_PREFIX=MaxTransactionFilter
+      - UPSTREAM_AMOUNT=1
       - PYTHONUNBUFFERED=1
   dollar_amount_filter_0:
     build:
@@ -64,6 +65,7 @@ services:
       - OUTPUT_QUEUE=Query1_Aggregator
       - FILTER_AMOUNT=1
       - FILTER_PREFIX=DollarAmtFilter
+      - UPSTREAM_AMOUNT=1
       - PYTHONUNBUFFERED=1
   query_1_aggregator:
     build:
@@ -79,6 +81,7 @@ services:
       - OUTPUT_QUEUE=transactions_queue
       - Q1_FILTER_AMOUNT=1
       - Q1_FILTER_PREFIX=DollarAmtFilter
+      - UPSTREAM_AMOUNT=1
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
@@ -96,6 +99,7 @@ services:
       - OUTPUT_QUEUE=transactions_queue
       - Q2_FILTER_AMOUNT=1
       - Q2_FILTER_PREFIX=MaxTransactionFilter
+      - UPSTREAM_AMOUNT=1
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
@@ -112,6 +116,7 @@ services:
       - OUTPUT_QUEUE=Query2_Aggregator
       - FILTER_AMOUNT=1
       - FILTER_PREFIX=MaxTransactionFilter
+      - UPSTREAM_AMOUNT=1
       - PYTHONUNBUFFERED=1
   rabbitmq:
     build:
