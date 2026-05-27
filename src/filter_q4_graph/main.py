@@ -56,14 +56,6 @@ class GraphFilter:
                 origin_data["destinations"].get(destination_key, 0) + 1
             )
 
-        # if destination_account is not None or destination_bank is not None:
-        #     destination_data = self.destination_groups[client_id][destination_key]
-        #     destination_data["transactions"] += 1
-        #     destination_data["total_amount"] += amount
-        #     destination_data["origins"][origin_key] = (
-        #         destination_data["origins"].get(origin_key, 0) + 1
-        #     )
-
     def _process_eof(self, deserialized_message):
         client_id = deserialized_message.get("client_id")
         if client_id is None:
@@ -90,11 +82,15 @@ class GraphFilter:
         direct_destinations = self.origin_groups[client_id][origin_key]["destinations"]
         second_level = {}
         for dest_key, direct_count in direct_destinations.items():
+            if dest_key == origin_key:
+                continue
             dest_origin_data = self.origin_groups[client_id].get(dest_key)
             if not dest_origin_data:
                 continue
             for next_dest_key, next_count in dest_origin_data["destinations"].items():
                 if next_dest_key == origin_key:
+                    continue
+                if next_dest_key == dest_key:
                     continue
                 second_level[next_dest_key] = second_level.get(next_dest_key, 0) + (
                     direct_count * next_count
