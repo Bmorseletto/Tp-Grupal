@@ -234,7 +234,10 @@ services:
       - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results
       - OUTPUT_QUEUE=join_results_queue
       - QUERY_AMOUNT=2
+      # - JOIN_STATE_DIR=/join_state
       - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
   rabbitmq:
     build:
       context: ./src/rabbitmq
