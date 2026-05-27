@@ -71,7 +71,7 @@ class JoinFilterQ2:
                 values = {
                     "account": transaction[0],
                     "amount_paid": transaction[1],
-                    "from_bank": self.acc_number_to_bank_name[transaction[0]],
+                    "from_bank": self.acc_number_to_bank_name.get(transaction[0], transaction[2]),
                 }
                 results.append(values)
             return results

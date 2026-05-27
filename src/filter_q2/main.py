@@ -37,7 +37,7 @@ class MaxTransactionFilter:
         if bank_id in self.max_transaction_per_bank[client_id].keys():
             if self.max_transaction_per_bank[client_id][bank_id][AMMOUNT_PAID_KEY] >= transaction[AMMOUNT_PAID_KEY]:
                 return
-        logging.info(f"TRANSDACTION {transaction}")
+        logging.debug(f"TRANSDACTION {transaction}")
         self.max_transaction_per_bank[client_id][bank_id] = transaction
     
 
@@ -52,7 +52,7 @@ class MaxTransactionFilter:
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {deserialized_message}")
+        logging.debug(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)
         else:    

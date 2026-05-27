@@ -31,8 +31,8 @@ def handle_client_request(client_socket, message_handler):
     try:
         while True:
             message = message_protocol.external.recv_msg(client_socket)
-            print(f"{message}", flush=True)
-            logging.info(f"Message: {message}")
+            # print(f"{message}", flush=True)
+            # logging.info(f"Message: {message}")
             if message[0] == message_protocol.external.MsgType.TRANSACTION_RECORD:
                 logging.info(f"Processing Transaction Record")
                 serialized_message = message_handler.serialize_transaction_message(message[1])
