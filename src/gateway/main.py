@@ -64,8 +64,6 @@ def handle_client_request(client_socket, message_handler):
                 message_protocol.external.send_msg(
                     client_socket, message_protocol.external.MsgType.ACK
                 )
-                
-            # elif message[0] == message_protocol.external.MsgType.RESULTS
     except socket.error:
         logging.error("The connection with the server was lost")
     except Exception as e:
@@ -79,20 +77,14 @@ def handle_client_response(client_list, results_count):
     input_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, INPUT_QUEUE)
 
     def _consume_result(message, ack, nack):
-        client_index = 0
+        client_index = -1
         try:
-            for [message_handler_instance, client_socket] in client_list:
+            for i, [message_handler_instance, client_socket] in enumerate(client_list):
                 result = message_handler_instance.deserialize_result_message(message)
                 if not result:
-                    client_index += 1
                     continue
+                client_index = i
                 client_id, deserialized_message = result
-                logging.info(f"deserialized_message: {deserialized_message}")
-
-                # if client_id not in results_count:
-                #     results_count[client_id] = 0
-
-                # results_count[client_id] += 1
                 logging.info(f"Received results for {client_id}")
 
                 message_protocol.external.send_msg(
@@ -101,16 +93,12 @@ def handle_client_response(client_list, results_count):
                     deserialized_message,
                 )
                 message_protocol.external.recv_msg(client_socket)
-
-                # if results_count[client_id] >= AMOUNT_RESULTS:
-                #     logging.info(f"Received all results from all queries")
-                #     message_protocol.external.send_msg(
-                #         client_socket,
-                #         message_protocol.external.MsgType.END_OF_RESULTS,
-                #     )
-                #     client_list.pop(client_index)
-                #     del results_count[client_id]
-                #     break
+                message_protocol.external.send_msg(
+                    client_socket,
+                    message_protocol.external.MsgType.END_OF_RESULTS,
+                )
+                break
+            client_list.pop(client_index)
             ack()
         except socket.error:
             logging.error("The connection with the server was lost")
