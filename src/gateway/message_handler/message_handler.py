@@ -35,7 +35,7 @@ class MessageHandler:
             )
         )
 
-    def serialize_eof_message(self, message):
+    def serialize_eof_message(self):
         return message_protocol.internal.serialize([self.client_id])
 
     def deserialize_result_message(self, message):
