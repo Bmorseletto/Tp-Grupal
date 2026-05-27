@@ -30,21 +30,11 @@ class JoinFilterQ2:
         self.clients_accounts_eof = set()
         logging.info("started JoinFilterQ2")
 
-    # def _read_accounts_file(self):
-    #     logging.info("reading accounts file")
-    #     with open(ACCOUNTS_FILE, "r", newline="") as csvfile:
-    #         csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
-    #         for row in csv_reader:
-    #             bank_name, _, acc_number, _, _ = row
-    #             if acc_number not in self.acc_number_to_bank_name:
-    #                 self.acc_number_to_bank_name[acc_number] = bank_name
-    #     logging.info("finished reading accounts file")
-
     def _process_transaction(self, transaction_message):
         client_id = transaction_message["client_id"]
         nodo_id = transaction_message["nodo_id"]
         results = transaction_message["results"]
-        logging.info(f"RESULTS {results}")
+        logging.info(f"processing EOF of {client_id} from filter {nodo_id}")
         self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
         with open(PATH_TRANSACTIONS + f"{client_id}.csv", "a") as csvfile:
             csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
@@ -54,13 +44,13 @@ class JoinFilterQ2:
         if len(self.worker_finished_with_client[client_id]) == Q2_FILTER_AMOUNT and client_id in self.clients_accounts_eof:
             self._send_results(client_id)
 
-    def _process_eof(self, eof_message):
-        client_id = eof_message["client_id"]
-        nodo_id = eof_message["nodo_id"]
-        logging.info(f"processing EOF of {client_id} from filter {nodo_id}")
-        self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
-        if len(self.worker_finished_with_client[client_id]) == Q2_FILTER_AMOUNT and client_id in self.clients_accounts_eof:
-            self._send_results(client_id)
+    # def _process_eof(self, eof_message):
+    #     client_id = eof_message["client_id"]
+    #     nodo_id = eof_message["nodo_id"]
+    #     logging.info(f"processing EOF of {client_id} from filter {nodo_id}")
+    #     self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
+    #     if len(self.worker_finished_with_client[client_id]) == Q2_FILTER_AMOUNT and client_id in self.clients_accounts_eof:
+    #         self._send_results(client_id)
 
     def _send_results(self, client_id):
         results = self._relate_bank_id_bank_name(client_id)
@@ -90,11 +80,7 @@ class JoinFilterQ2:
         try:
             deserialized_message = message_protocol.internal.deserialize(message)
             logging.info(f"transaction msg received {deserialized_message}")
-            if isinstance(deserialized_message, dict):
-                if "results" in deserialized_message:
-                    self._process_transaction(deserialized_message)
-                elif "nodo_id" in deserialized_message:
-                    self._process_eof(deserialized_message)
+            self._process_transaction(deserialized_message)
             ack()
         except Exception:
             logging.exception("An error occurred while processing a transaction message")
@@ -108,8 +94,8 @@ class JoinFilterQ2:
                 client_id = deserialized_message[0]
                 self.clients_accounts_eof.add(client_id)
                 logging.info(f"accounts EOF received for client {client_id}")
-                if client_id in self.worker_finished_with_client and len(self.worker_finished_with_client[client_id]) == Q2_FILTER_AMOUNT:
-                    self._send_results(client_id)
+                # if client_id in self.worker_finished_with_client and len(self.worker_finished_with_client[client_id]) == Q2_FILTER_AMOUNT:
+                #     self._send_results(client_id)
             else:
                 self.acc_number_to_bank_name[deserialized_message["account_number"]] = deserialized_message["bank_name"]
             ack()
