@@ -38,7 +38,7 @@ class JoinNode:
                 logging.info(f"sent consolidated results for client {client_id}")
             ack()
         except Exception as e:
-            logging.error(f"error processing message: {e}")
+            logging.exception(f"error processing message: {e}")
             nack()
 
     def start(self):
@@ -63,8 +63,8 @@ def main():
         join.start()
         join.close()
         return 0
-    except Exception as e:
-        logging.error(f"error: {e}")
+    except Exception:
+        logging.exception("An error occurred while running the join node")
 
 
 if __name__ == "__main__":

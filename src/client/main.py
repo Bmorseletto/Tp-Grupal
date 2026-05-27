@@ -122,9 +122,9 @@ class Client:
             if results[0] != message_protocol.external.MsgType.RESULTS:
                 raise TypeError(f"Expected RESULTS or END_OF_RESULTS, got {results[0]}")
             logging.info("Received query result")
-            message_protocol.external.send_msg(
-                self.server_socket, message_protocol.external.MsgType.ACK
-            )
+            # message_protocol.external.send_msg(
+            #     self.server_socket, message_protocol.external.MsgType.ACK
+            # )
             filepath = Path(output_file)
             name = filepath.name
             for query_id, query_results in results[1].items():
@@ -153,8 +153,8 @@ def main() -> int:
         if not client.closed:
             logging.error(f"The connection with the server was lost {e}")
             return 1
-    except Exception as e:
-        logging.error(e)
+    except Exception:
+        logging.exception("An error occurred while running the client")
         return 2
     finally:
         if not client.closed:

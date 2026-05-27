@@ -93,8 +93,8 @@ def main():
         join_filter.start()
         join_filter.close()
         return 0
-    except Exception as e:
-        logging.error(f"error: {e}")
+    except Exception:
+        logging.exception(f"An error occurred while running the {Q1_FILTER_PREFIX} filter")
 
 
 if __name__ == "__main__":

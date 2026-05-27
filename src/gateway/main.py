@@ -92,7 +92,7 @@ def handle_client_response(client_list, results_count):
                     message_protocol.external.MsgType.RESULTS,
                     deserialized_message,
                 )
-                message_protocol.external.recv_msg(client_socket)
+                # message_protocol.external.recv_msg(client_socket)
                 message_protocol.external.send_msg(
                     client_socket,
                     message_protocol.external.MsgType.END_OF_RESULTS,

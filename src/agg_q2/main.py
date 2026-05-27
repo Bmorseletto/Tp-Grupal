@@ -96,8 +96,8 @@ class JoinFilterQ2:
                 elif "nodo_id" in deserialized_message:
                     self._process_eof(deserialized_message)
             ack()
-        except Exception as e:
-            logging.error(f"error: {e}")
+        except Exception:
+            logging.exception("An error occurred while processing a transaction message")
             nack()
 
     def _on_accounts_message(self, message, ack, nack):
@@ -113,8 +113,8 @@ class JoinFilterQ2:
             else:
                 self.acc_number_to_bank_name[deserialized_message["account_number"]] = deserialized_message["bank_name"]
             ack()
-        except Exception as e:
-            logging.error(f"error: {e}")
+        except Exception:
+            logging.exception("An error occurred while processing an accounts message")
             nack()
 
     def start(self):
@@ -139,8 +139,8 @@ def main():
         join_filter.start()
         join_filter.close()
         return 0
-    except Exception as e:
-        logging.error(f"error: {e}")
+    except Exception:
+        logging.exception(f"An error occurred while running the {Q2_FILTER_PREFIX} filter")
 
 
 if __name__ == "__main__":
