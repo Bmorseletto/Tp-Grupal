@@ -10,6 +10,7 @@ MOM_HOST = os.environ["MOM_HOST"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
 FILTER_PREFIX = os.environ["FILTER_PREFIX"]
+UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 DONE = True
 WORKING = False
 CLIENT_ID_KEY = "client_id"
@@ -26,6 +27,7 @@ class MaxTransactionFilter:
             MOM_HOST, OUTPUT_QUEUE
         )
         self.max_transaction_per_bank = {}
+        self.eof_count = {}
 
     def _process_data(self, transaction):
         client_id = transaction.pop(CLIENT_ID_KEY)
@@ -39,18 +41,22 @@ class MaxTransactionFilter:
         self.max_transaction_per_bank[client_id][bank_id] = transaction
     
 
-    def _process_eof(self, desirialized_message):
-        results = list(self.max_transaction_per_bank[desirialized_message[CLIENT_ID_KEY]].values())
+    def _process_eof(self, deserialized_message):
+        client_id = deserialized_message["client_id"]
+        self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
+        if self.eof_count[client_id] < UPSTREAM_AMOUNT:
+            return
+        results = list(self.max_transaction_per_bank[deserialized_message[CLIENT_ID_KEY]].values())
         logging.info(f"Sending max values {results}, to {OUTPUT_QUEUE}")
-        self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, CLIENT_ID_KEY:desirialized_message[CLIENT_ID_KEY], "results": results} ))
+        self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, CLIENT_ID_KEY:deserialized_message[CLIENT_ID_KEY], "results": results} ))
 
     def process_messsage(self, message, ack, nack):
-        desirialized_message = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {desirialized_message}")
-        if len(desirialized_message) == 2:
-            self._process_eof(desirialized_message)
+        deserialized_message = message_protocol.internal.deserialize(message)
+        logging.info(f"MESSAGE {deserialized_message}")
+        if len(deserialized_message) == 2:
+            self._process_eof(deserialized_message)
         else:    
-            self._process_data(desirialized_message)
+            self._process_data(deserialized_message)
         ack()
 
     def start(self):
