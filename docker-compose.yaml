@@ -8,12 +8,12 @@ services:
       - currency_filter_0
       - currency_filter_1
     environment:
-    - TRANSACTIONS_INPUT_FILE=/datasets/input_0.csv
-    - ACCOUNTS_INPUT_FILE=/datasets/accounts_0.csv
-    - OUTPUT_FILE=/output/output_0.csv
-    - PYTHONUNBUFFERED=1
-    - SERVER_HOST=gateway
-    - SERVER_PORT=5678
+      - TRANSACTIONS_INPUT_FILE=/datasets/input_0.csv
+      - ACCOUNTS_INPUT_FILE=/datasets/accounts_0.csv
+      - OUTPUT_FILE=/output/output_0.csv
+      - PYTHONUNBUFFERED=1
+      - SERVER_HOST=gateway
+      - SERVER_PORT=5678
     volumes:
       - ./datasets:/datasets
       - ./output:/output
@@ -87,8 +87,12 @@ services:
       - FILTER_PREFIX=CurrencyFilter
       - FILTER_Q1_AMOUNT=3
       - FILTER_Q1_PREFIX=DollarAmtFilter
-      - FILTER_Q2_AMOUNT=1
+      - FILTER_Q2_AMOUNT=2
       - FILTER_Q2_PREFIX=MaxTransactionFilter
+      - FILTER_Q3_AMOUNT=1
+      - FILTER_Q3_PREFIX=DateFilterQ3
+      - FILTER_DATE_AMOUNT=1
+      - FILTER_DATE_PREFIX=DateFilter
       - PYTHONUNBUFFERED=1
   currency_filter_1:
     build:
@@ -107,8 +111,13 @@ services:
       - FILTER_PREFIX=CurrencyFilter
       - FILTER_Q1_AMOUNT=3
       - FILTER_Q1_PREFIX=DollarAmtFilter
-      - FILTER_Q2_AMOUNT=1
+      - FILTER_Q2_AMOUNT=2
       - FILTER_Q2_PREFIX=MaxTransactionFilter
+      - FILTER_Q3_AMOUNT=1
+      - FILTER_Q3_PREFIX=DateFilterQ3
+      - FILTER_DATE_AMOUNT=1
+      - FILTER_DATE_PREFIX=DateFilter
+      - PYTHONUNBUFFERED=1
       - PYTHONUNBUFFERED=1
   dollar_amount_filter_0:
     build:
@@ -185,12 +194,103 @@ services:
       - ACCOUNTS_FILE=/datasets/LI-Small_accounts.csv
       - INPUT_QUEUE=Query2_Aggregator
       - OUTPUT_QUEUE=Join_Q2_Results
-      - Q2_FILTER_AMOUNT=1
+      - Q2_FILTER_AMOUNT=2
       - Q2_FILTER_PREFIX=MaxTransactionFilter
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./datasets:/datasets
       - ./output:/output
+
+  ###############################
+  #           QUERY 3           #
+  ###############################
+  query_3_aggregator:
+    build:
+      context: ./src/
+      dockerfile: agg_q3/Dockerfile
+    container_name: query_3_aggregator
+    depends_on:
+      - gateway
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - INPUT_QUEUE=Query3_Aggregator
+      - OUTPUT_QUEUE=Join_Q3_Results
+      - Q3_FILTER_AMOUNT=1
+      - Q3_FILTER_PREFIX=AvgFilter
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  query_3_avg_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q3_comparison/Dockerfile
+    container_name: query_3_avg_filter_0
+    depends_on:
+      - query_3_aggregator
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=1
+      - FILTER_PREFIX=AvgFilter
+      - OUTPUT_QUEUE=Query3_Aggregator
+      - AVG_CALC_AMOUNT=1
+      - DATE_FILTER_AMOUNT=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  query_3_avg_calc_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q3_avg/Dockerfile
+    container_name: query_3_avg_calc_0
+    depends_on:
+      - query_3_avg_filter_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=1
+      - FILTER_PREFIX=AvgCalc
+      - OUTPUT_PREFIX=AvgFilter
+      - OUTPUT_AMOUNT=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  query_3_date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: query_3_date_filter_0
+    depends_on:
+      - query_3_avg_filter_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilterQ3
+      - OUTPUTS_PREFIX=AvgFilter
+      - OUTPUTS_AMOUNTS=1
+      - ROUTING_HASH_TARGET=account
+      - INITIAL_DATE=2022/09/06
+      - END_DATE=2022/09/15
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+  date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: date_filter_0
+    depends_on:
+      - query_3_avg_calc_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilter
+      - OUTPUTS_PREFIX=AvgCalc
+      - OUTPUTS_AMOUNTS=1
+      - ROUTING_HASH_TARGET=payment_format
+      - INITIAL_DATE=2022/09/01
+      - END_DATE=2022/09/05
+      - PYTHONUNBUFFERED=1
+  ##############################################
   max_transaction_filter_0:
     build:
       context: ./src/
@@ -231,9 +331,9 @@ services:
         condition: service_healthy
     environment:
       - MOM_HOST=rabbitmq
-      - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results
+      - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q3_Results
       - OUTPUT_QUEUE=join_results_queue
-      - QUERY_AMOUNT=2
+      - QUERY_AMOUNT=3
       - PYTHONUNBUFFERED=1
   rabbitmq:
     build:
