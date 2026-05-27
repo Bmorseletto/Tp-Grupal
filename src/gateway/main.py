@@ -6,6 +6,7 @@ import multiprocessing
 import zlib
 import message_handler
 from common import middleware, message_protocol
+from asyncio import IncompleteReadError
 
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
@@ -37,37 +38,32 @@ def handle_client_request(client_socket, message_handler):
                 serialized_message = message_handler.serialize_transaction_message(message[1])
                 routing_key = str(zlib.crc32(message[1].account.encode('utf-8')) % AMOUNT_CURRENCY_FILTERS)
                 data_output_exchange.send_by_key(serialized_message, routing_key)
-                message_protocol.external.send_msg(
-                    client_socket, message_protocol.external.MsgType.ACK
-                )
 
             elif message[0] == message_protocol.external.MsgType.ACCOUNT_RECORD:
                 logging.info(f"Processing Account Record")
                 serialized_message = message_handler.serialize_account_message(message[1])
                 accounts_output_queue.send(serialized_message)
-                message_protocol.external.send_msg(
-                    client_socket, message_protocol.external.MsgType.ACK
-                )
 
             elif message[0] == message_protocol.external.MsgType.END_OF_TRANSACTIONS:
                 logging.info("Processing Transactions EOF")
                 serialized_message = message_handler.serialize_eof_message()
                 data_output_exchange.send_by_key(serialized_message, CURRENCY_PREFIX)
-                message_protocol.external.send_msg(
-                    client_socket, message_protocol.external.MsgType.ACK
-                )
 
             elif message[0] == message_protocol.external.MsgType.END_OF_ACCOUNTS:
                 logging.info("Processing Accounts EOF")
                 serialized_message = message_handler.serialize_eof_message()
                 accounts_output_queue.send(serialized_message)
-                message_protocol.external.send_msg(
-                    client_socket, message_protocol.external.MsgType.ACK
-                )
+                
+            # ACK
+            message_protocol.external.send_msg(
+                client_socket, message_protocol.external.MsgType.ACK
+            )
     except socket.error:
         logging.error("The connection with the server was lost")
-    except Exception as e:
-        logging.error(e)
+    except IncompleteReadError:
+        logging.info("The client has closed the connection")
+    except Exception:
+        logging.exception(f"An error occurred while processing the client's request: {message}")
     finally:
         data_output_exchange.close()
         accounts_output_queue.close()
@@ -104,8 +100,8 @@ def handle_client_response(client_list, results_count):
             logging.error("The connection with the server was lost")
             client_list.pop(client_index)
             ack()
-        except Exception as e:
-            logging.error(e)
+        except Exception:
+            logging.exception("An error occurred while processing the client's response")
             nack()
             input_queue.stop_consuming()
 
@@ -157,8 +153,8 @@ def main():
                             return 1
                         else:
                             return 0
-                    except Exception as e:
-                        logging.error(e)
+                    except Exception:
+                        logging.exception("An error occurred while accepting a new client connection")
                         return 2
     return 0
 
