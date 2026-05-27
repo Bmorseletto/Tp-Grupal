@@ -202,7 +202,22 @@ services:
       - ID=0
       - MOM_HOST=rabbitmq
       - OUTPUT_QUEUE=Query2_Aggregator
-      - FILTER_AMOUNT=1
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=MaxTransactionFilter
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+  max_transaction_filter_1:
+    build:
+      context: ./src/
+      dockerfile: filter_q2/Dockerfile
+    container_name: max_transaction_filter_1
+    depends_on:
+      - query_2_aggregator
+    environment:
+      - ID=1
+      - MOM_HOST=rabbitmq
+      - OUTPUT_QUEUE=Query2_Aggregator
+      - FILTER_AMOUNT=2
       - FILTER_PREFIX=MaxTransactionFilter
       - UPSTREAM_AMOUNT=2
       - PYTHONUNBUFFERED=1
