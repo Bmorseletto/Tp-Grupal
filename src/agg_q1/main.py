@@ -41,23 +41,27 @@ class JoinFilterQ1:
         logging.info(f"processing EOF of {client_id} from filter {nodo_id}")
         self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
         if len(self.worker_finished_with_client[client_id]) == Q1_FILTER_AMOUNT:
-            with open(f"/output/q1_{client_id}.csv", "r", newline="") as csvfile:
-                csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
+            csv_path = f"/output/q1_{client_id}.csv"
+            if os.path.exists(csv_path):
+                with open(csv_path, "r", newline="") as csvfile:
+                    csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
+                    results = []
+                    for transaction in csv_reader:
+                        logging.info(f"sending transaction: {transaction}, to gateway")
+                        values = {
+                            "account": transaction[0],
+                            "to_account": transaction[1],
+                            "amount_paid": transaction[2],
+                        }
+                        results.append(values)
+                os.remove(csv_path)
+            else:
                 results = []
-                for transaction in csv_reader:
-                    logging.info(f"sending transaction: {transaction}, to gateway")
-                    values = {
-                        "account": transaction[0],
-                        "to_account": transaction[1],
-                        "amount_paid": transaction[2],
-                    }
-                    results.append(values)
-                self.output_queue.send(
-                    message_protocol.internal.serialize([client_id, results])
-                )
-            os.remove(f"/output/q1_{client_id}.csv")
+            self.output_queue.send(
+                message_protocol.internal.serialize([client_id, "q1", results])
+            )
             del self.worker_finished_with_client[client_id]
-            logging.info(f"finished processing EOF of {client_id} from filter {nodo_id}, sent results to gateway")
+            logging.info(f"finished processing EOF of {client_id} sent results to gateway")
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)

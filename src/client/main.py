@@ -3,7 +3,7 @@ import logging
 import csv
 import socket
 import signal
-
+from pathlib import Path
 from common import message_protocol
 
 TRANSACTIONS_INPUT_FILE = os.environ["TRANSACTIONS_INPUT_FILE"]
@@ -115,21 +115,25 @@ class Client:
         message_protocol.external.recv_msg(self.server_socket)
 
     def recv_results(self, output_file):
-        with open(output_file, "w", newline="") as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-            while True:
-                results = message_protocol.external.recv_msg(self.server_socket)
-                if results[0] == message_protocol.external.MsgType.RESULTS:
-                    for query_item in results[1]:
-                        csv_writer.writerow(query_item)
-                    message_protocol.external.send_msg(
-                        self.server_socket, message_protocol.external.MsgType.ACK
-                    )
-                elif results[0] == message_protocol.external.MsgType.END_OF_RESULTS:
-                    logging.info("Received all results")
-                    break
-                else:
-                    raise TypeError("Unexpected message type")
+        logging.info("Receiving query result")
+        results = message_protocol.external.recv_msg(self.server_socket)
+        logging.info("Received query result")
+        message_protocol.external.send_msg(
+            self.server_socket, message_protocol.external.MsgType.ACK
+        )
+        logging.info(f"RESULTS: {results}")
+        if results[0] != message_protocol.external.MsgType.RESULTS:
+            raise TypeError("Expected a RESULTS message")
+
+        filepath = Path(output_file)
+        name = filepath.name
+        for query_id, query_results in results[1].items():
+            with open(filepath.with_name(f"{query_id}_{name}"), "w") as csvfile:
+                csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                # csv_writer.writerow([query_id])
+                for row in query_results:
+                    csv_writer.writerow(row)
+
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO)
