@@ -16,7 +16,7 @@ OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 AMOUNT_CURRENCY_FILTERS = int(os.environ["AMOUNT_CURRENCY"])
 CURRENCY_PREFIX = os.environ["CURRENCY_PREFIX"]
 
-AMOUNT_RESULTS = 2
+AMOUNT_RESULTS = 1
 
 
 def handle_client_request(client_socket, message_handler):
