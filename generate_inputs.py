@@ -35,18 +35,15 @@ def main():
 
         # 4. Filtrar el segundo archivo basándose en los IDs del chunk actual
         # Usamos .isin() para extraer solo las filas relacionadas
-        ids_in_chunk = chunk_main[args.join_on]
-        chunk_related = df_related[df_related[args.join_on].isin(ids_in_chunk)]
+        m = chunk_main.columns.str.contains(args.join_on)
+        ids_in_chunk = chunk_main[chunk_main.columns[m]].to_numpy().flatten()
+        chunk_related = df_related[df_related["Account Number"].isin(ids_in_chunk)]
 
         # 5. Guardar ambos
-        chunk_main.to_csv(os.path.join(args.output_dir, f"main_{i}.csv"), index=False)
-        chunk_related.to_csv(os.path.join(args.output_dir, f"related_{i}.csv"), index=False)
+        chunk_main.to_csv(os.path.join(args.output_dir, f"input_{i}.csv"), index=False)
+        chunk_related.to_csv(os.path.join(args.output_dir, f"accounts_{i}.csv"), index=False)
 
     print(f"Generados {args.M} pares de archivos en '{args.output_dir}'.")
-
-if __name__ == "__main__":
-    main()
-
 
 if __name__ == "__main__":
     main()
