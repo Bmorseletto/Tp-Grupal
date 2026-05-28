@@ -50,7 +50,7 @@ class DateFilter:
 
     def _process_data(self, transaction):
         
-        transaction_timestamp=datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M")
+        transaction_timestamp=datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M").replace(hour=0, minute=0, second=0, microsecond=0)
         initial_date = datetime.strptime(INITIAL_DATE, "%Y/%m/%d")
         end_date = datetime.strptime(END_DATE, "%Y/%m/%d")
         logging.debug(f"transaction_timestamp {transaction_timestamp}, initial_date {initial_date}, end_date {end_date} ")
