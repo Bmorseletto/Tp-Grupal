@@ -9,6 +9,7 @@ services:
     - currency_filter_1
     environment:
     - TRANSACTIONS_INPUT_FILE=/datasets/input_0.csv
+    - ACCOUNTS_INPUT_FILE=/datasets/accounts_0.csv
     - OUTPUT_FILE=/output/output_0.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
@@ -26,6 +27,7 @@ services:
     - currency_filter_1
     environment:
     - TRANSACTIONS_INPUT_FILE=/datasets/input_1.csv
+    - ACCOUNTS_INPUT_FILE=/datasets/accounts_1.csv
     - OUTPUT_FILE=/output/output_1.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
@@ -43,6 +45,7 @@ services:
     - currency_filter_1
     environment:
     - TRANSACTIONS_INPUT_FILE=/datasets/input_2.csv
+    - ACCOUNTS_INPUT_FILE=/datasets/accounts_2.csv
     - OUTPUT_FILE=/output/output_2.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
@@ -60,6 +63,7 @@ services:
         condition: service_healthy
     environment:
     - INPUT_QUEUE=transactions_queue
+    - OUTPUT_QUEUE=Query2_Aggregator
     - MOM_HOST=rabbitmq
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway

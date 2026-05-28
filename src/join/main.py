@@ -81,6 +81,7 @@ class JoinNode:
     def _on_message(self, message, ack, nack):
         try:
             deserialized = message_protocol.internal.deserialize(message)
+            logging.debug(f"Received message: {deserialized}")
             client_id = deserialized[0]
             query_id = deserialized[1]
             results = deserialized[2]

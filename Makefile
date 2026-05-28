@@ -16,6 +16,14 @@ logs:
 	docker compose -f docker-compose.yaml logs
 .PHONY: logs
 
+inputs:
+	uv run generate_inputs.py --output=datasets 10000 3
+.PHONY: inputs
+
+accounts:
+	uv run generate_accounts.py --output=datasets --source=datasets/LI-Small_accounts.csv --prefix=accounts 800000 3
+.PHONY: accounts
+
 # test:
 # 	mkdir -p output
 # 	rm ./output/* -f

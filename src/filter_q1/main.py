@@ -58,10 +58,9 @@ class DollarAmtFilter:
 
     def start(self):
         self.input_exchange.start_consuming(self.process_messsage)
-        self.input_exchange.close()
-        self.output_queue.close()
 
     def stop(self):
+        logging.info(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
         self.input_exchange.stop_consuming()
 
     def close(self):

@@ -70,8 +70,6 @@ services:
       - SERVER_PORT=5678
       - AMOUNT_CURRENCY=2
       - CURRENCY_PREFIX=CurrencyFilter
-      - Q5_PREFIX=DateFilterQ5
-      - AMOUNT_Q5=1 
   currency_filter_0:
     build:
       context: ./src/
@@ -79,10 +77,6 @@ services:
     container_name: currency_filter_0
     depends_on:
       - dollar_amount_filter_0
-      - max_transaction_filter_0
-      - date_filter_0
-      - date_filter_1
-      - query_3_date_filter_0
       - dollar_amount_filter_1
       - dollar_amount_filter_2
     environment:
@@ -97,11 +91,7 @@ services:
       - FILTER_Q2_PREFIX=MaxTransactionFilter
       - FILTER_Q3_AMOUNT=1
       - FILTER_Q3_PREFIX=DateFilterQ3
-      # - FILTER_Q4_AMOUNT=0
-      # - FILTER_Q4_PREFIX=DateFilterQ4
-      # - FILTER_Q5_AMOUNT=1
-      # - FILTER_Q5_PREFIX=DateFilter
-      - FILTER_DATE_AMOUNT=2
+      - FILTER_DATE_AMOUNT=1
       - FILTER_DATE_PREFIX=DateFilter
       - PYTHONUNBUFFERED=1
   currency_filter_1:
@@ -125,12 +115,9 @@ services:
       - FILTER_Q2_PREFIX=MaxTransactionFilter
       - FILTER_Q3_AMOUNT=1
       - FILTER_Q3_PREFIX=DateFilterQ3
-      # - FILTER_Q4_AMOUNT=0
-      # - FILTER_Q4_PREFIX=DateFilterQ4
-      # - FILTER_Q5_AMOUNT=1
-      # - FILTER_Q5_PREFIX=DateFilter
-      - FILTER_DATE_AMOUNT=2
+      - FILTER_DATE_AMOUNT=1
       - FILTER_DATE_PREFIX=DateFilter
+      - PYTHONUNBUFFERED=1
       - PYTHONUNBUFFERED=1
   dollar_amount_filter_0:
     build:
@@ -369,17 +356,15 @@ services:
     container_name: date_filter_0
     depends_on:
       - query_3_avg_calc_0
-      - query_4_graph_0
-      - query_4_graph_1
-      - usd_converter_0
+      - query_3_avg_calc_1
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
-      - OUTPUTS_PREFIX=AvgCalc,Q4Graph
-      - OUTPUTS_AMOUNTS=2,2
-      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
+      - OUTPUTS_PREFIX=AvgCalc
+      - OUTPUTS_AMOUNTS=2      # Envía a 2 AvgCalcs
       - UPSTREAM_AMOUNT=2
+      - ROUTING_HASH_TARGET=payment_format
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
@@ -392,93 +377,17 @@ services:
     depends_on:
       - query_3_avg_calc_0
       - query_3_avg_calc_1
-      - usd_converter_0
     environment:
       - ID=1                    # Nuevo ID
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
-      - OUTPUTS_PREFIX=AvgCalc,Q4Graph
-      - OUTPUTS_AMOUNTS=2,2
-      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
+      - OUTPUTS_PREFIX=AvgCalc
+      - OUTPUTS_AMOUNTS=2
       - UPSTREAM_AMOUNT=2
+      - ROUTING_HASH_TARGET=payment_format
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
-  ##############################################
-  ####### QUERY 4 ##############################
-  query_4_graph_0:
-    build:
-      context: ./src/
-      dockerfile: filter_q4_graph/Dockerfile
-    container_name: query_4_graph_0
-    depends_on:
-      - query_4_scatter_detector_0
-    environment:
-      - ID=0
-      - MOM_HOST=rabbitmq
-      - FILTER_AMOUNT=2
-      - FILTER_PREFIX=Q4Graph
-      - OUTPUT_PREFIX=Q4GScatterDetector
-      - OUTPUT_AMOUNT=1
-      - FILTER_DATE_AMOUNT=2
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./output:/output
-
-  query_4_graph_1:
-    build:
-      context: ./src/
-      dockerfile: filter_q4_graph/Dockerfile
-    container_name: query_4_graph_1
-    depends_on:
-      - query_4_scatter_detector_0
-    environment:
-      - ID=1
-      - MOM_HOST=rabbitmq
-      - FILTER_AMOUNT=2
-      - FILTER_PREFIX=Q4Graph
-      - OUTPUT_PREFIX=Q4GScatterDetector
-      - OUTPUT_AMOUNT=1
-      - FILTER_DATE_AMOUNT=2
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./output:/output
-  query_4_scatter_detector_0:
-    build:
-      context: ./src/
-      dockerfile: filter_q4_scatter_gather/Dockerfile
-    container_name: query_4_scatter_detector_0
-    depends_on:
-      - query_4_agg_0
-    environment:
-      - ID=0
-      - MOM_HOST=rabbitmq
-      - FILTER_AMOUNT=1
-      - SCATTER_DETECTOR_PREFIX=Q4GScatterDetector
-      - OUTPUT_PREFIX=Q4Agg
-      - OUTPUT_AMOUNT=1
-      - Q4_GRAPH_AMOUNT=2
-      - SCATTER_VALUE=2
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./output:/output
-  query_4_agg_0:
-    build:
-      context: ./src/
-      dockerfile: q4_agg/Dockerfile
-    container_name: query_4_agg_0
-    depends_on:
-      - join
-    environment:
-      - ID=0
-      - MOM_HOST=rabbitmq
-      - FILTER_AMOUNT=1
-      - INPUT_QUEUE=Q4Agg
-      - OUTPUT_QUEUE=Join_Q4_Results
-      - Q4_SCATTER_AMOUNT=1
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./output:/output
   ##############################################
   max_transaction_filter_0:
     build:
@@ -510,60 +419,6 @@ services:
       - FILTER_PREFIX=MaxTransactionFilter
       - UPSTREAM_AMOUNT=2
       - PYTHONUNBUFFERED=1
-
-  usd_converter_0:
-    build:
-      context: ./src/
-      dockerfile: usd_converter/Dockerfile
-    container_name: usd_converter_0
-    depends_on:
-      - query_5_aggregator
-    environment:
-      - ID=0
-      - MOM_HOST=rabbitmq
-      - OUTPUT_QUEUE=Query5_Aggregator
-      - FILTER_PREFIX=USDConverter
-      - FILTER_AMOUNT=1
-      - UPSTREAM_AMOUNT=1 
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./output:/output
-
-  query_5_aggregator:
-    build:
-      context: ./src/
-      dockerfile: agg_q5/Dockerfile
-    container_name: query_5_aggregator
-    depends_on:
-      - join
-    environment:
-      - ID=0
-      - MOM_HOST=rabbitmq
-      - INPUT_QUEUE=Query5_Aggregator
-      - OUTPUT_QUEUE=Join_Q5_Results
-      - Q5_FILTER_AMOUNT=1
-      - Q5_FILTER_PREFIX=USDConverter
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./output:/output
-  query_5_date_filter_0:
-    build:
-      context: ./src/
-      dockerfile: filter_date/Dockerfile
-    container_name: query_5_date_filter_0
-    depends_on:
-      - usd_converter_0
-    environment:
-      - ID=0
-      - MOM_HOST=rabbitmq
-      - FILTER_PREFIX=DateFilterQ5
-      - OUTPUTS_PREFIX=USDConverter
-      - OUTPUTS_AMOUNTS=1      # Envía a 2 AvgFilters
-      - UPSTREAM_AMOUNT=1
-      - ROUTING_HASH_TARGET=account
-      - INITIAL_DATE=2022/09/01
-      - END_DATE=2022/09/15
-      - PYTHONUNBUFFERED=1
   join:
     build:
       context: ./src/
@@ -574,9 +429,9 @@ services:
         condition: service_healthy
     environment:
       - MOM_HOST=rabbitmq
-      - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q5_Results,Join_Q4_Results,Join_Q3_Results,
+      - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q3_Results
       - OUTPUT_QUEUE=join_results_queue
-      - QUERY_AMOUNT=5
+      - QUERY_AMOUNT=3
       - PYTHONUNBUFFERED=1
   rabbitmq:
     build:

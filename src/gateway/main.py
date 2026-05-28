@@ -16,18 +16,27 @@ INPUT_QUEUE = os.environ["INPUT_QUEUE"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 AMOUNT_CURRENCY_FILTERS = int(os.environ["AMOUNT_CURRENCY"])
 CURRENCY_PREFIX = os.environ["CURRENCY_PREFIX"]
+Q5_PREFIX = os.environ["Q5_PREFIX"]
+AMOUNT_Q5 = int(os.environ["AMOUNT_Q5"])
 
 # AMOUNT_RESULTS = 2
 
 
 def handle_client_request(client_socket, message_handler):
+    logging.basicConfig(level=logging.INFO)
     routing_keys = [CURRENCY_PREFIX] + [str(i) for i in range(AMOUNT_CURRENCY_FILTERS)]
+    routing_keys_converter = [Q5_PREFIX]
+    routing_keys_converter.extend(f"{Q5_PREFIX}{i}" for i in range(AMOUNT_Q5))
     data_output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST, CURRENCY_PREFIX, routing_keys
+        )
+    data_output_exchange_converter = middleware.MessageMiddlewareExchangeRabbitMQ(
+            MOM_HOST, Q5_PREFIX, routing_keys_converter
         )
     accounts_output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
             MOM_HOST, OUTPUT_QUEUE
         )
+    logging.info(f"routing_keys_converter: {routing_keys_converter}")
     try:
         while True:
             message = message_protocol.external.recv_msg(client_socket)
@@ -38,6 +47,8 @@ def handle_client_request(client_socket, message_handler):
                 serialized_message = message_handler.serialize_transaction_message(message[1])
                 routing_key = str(zlib.crc32(message[1].account.encode('utf-8')) % AMOUNT_CURRENCY_FILTERS)
                 data_output_exchange.send_by_key(serialized_message, routing_key)
+                routing_key_converter = Q5_PREFIX+str(zlib.crc32(message[1].account.encode('utf-8')) % AMOUNT_Q5)
+                data_output_exchange_converter.send_by_key(serialized_message, routing_key_converter)
 
             elif message[0] == message_protocol.external.MsgType.ACCOUNT_RECORD:
                 logging.info(f"Processing Account Record")
@@ -48,6 +59,11 @@ def handle_client_request(client_socket, message_handler):
                 logging.info("Processing Transactions EOF")
                 serialized_message = message_handler.serialize_eof_message()
                 data_output_exchange.send_by_key(serialized_message, CURRENCY_PREFIX)
+                deserialized_message = message_protocol.internal.deserialize(serialized_message)
+                serialized_message=message_protocol.internal.serialize(
+                    {"nodo_id": 0, "client_id": deserialized_message[0]}
+                )
+                data_output_exchange_converter.send_by_key(serialized_message, Q5_PREFIX)
 
             elif message[0] == message_protocol.external.MsgType.END_OF_ACCOUNTS:
                 logging.info("Processing Accounts EOF")
