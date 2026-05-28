@@ -69,10 +69,10 @@ class ScatterGatherDetector:
             }
             self.output_queue.send(message_protocol.internal.serialize(filtered_result))
 
-            # EOF
-            self.output_queue.send( message_protocol.internal.serialize(
-                {"nodo_id": ID, "client_id": client_id}
-            ))
+        # EOF
+        self.output_queue.send( message_protocol.internal.serialize(
+            {"nodo_id": ID, "client_id": client_id}
+        ))
 
     def process_message(self, message, ack, nack):
         deserialized = message_protocol.internal.deserialize(message)

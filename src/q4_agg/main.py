@@ -55,19 +55,19 @@ class AggregatorQ4:
             if len(self.worker_finished_with_client[client_id]) == Q4_SCATTER_AMOUNT:
                 path = RESULTS_STORAGE + f"{client_id}.csv"
                 results = []
-                with open(path, "r", newline="") as csvfile:
-                    reader = csv.DictReader(csvfile)
-                    for row in reader:
-                        values = {
-                            "origin_bank": row["origin_bank"],
-                            "origin_account": row["origin_account"],
-                            "destinations": eval(row["destinations"])
-                        }
-                        results.append(values)
-                        logging.info(f"sending result: {values}")
-
-                self.output_queue.send(message_protocol.internal.serialize([client_id, results]))
-                os.remove(path)
+                if os.path.isfile(RESULTS_STORAGE+f"{client_id}.csv"):
+                    with open(path, "r", newline="") as csvfile:
+                        reader = csv.DictReader(csvfile)
+                        for row in reader:
+                            values = {
+                                "origin_bank": row["origin_bank"],
+                                "origin_account": row["origin_account"],
+                                "destinations": eval(row["destinations"])
+                            }
+                            results.append(values)
+                            logging.info(f"sending result: {values}")
+                    os.remove(path)
+                self.output_queue.send(message_protocol.internal.serialize([client_id, "q4",results]))
                 logging.info(f"Q4 RESULTS SENT for client {client_id}")
         except Exception as e:
             logging.error(f"ERROR: {e}")

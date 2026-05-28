@@ -86,10 +86,9 @@ class DateFilter:
             for i in range(len(self.outputs_prefix))
         ]
         self.eof_count = {}
-
-        self.graph_router = GraphRouter(self.outputs_amounts[1])
         logging.info(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
         logging.info(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
+        logging.info(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
 
     def _process_data(self, transaction):
         
@@ -100,42 +99,34 @@ class DateFilter:
         logging.info(f"date comp: {initial_date <= transaction_timestamp <= end_date}")
 
         if initial_date <= transaction_timestamp <= end_date:
-            # for i in range(len(self.output_exchanges)):
-            #     routing_key = (
-            #     self.outputs_prefix[i]
-            #     + str(
-            #         zlib.crc32(transaction[self.routing_hash_targets[i]].encode("utf-8"))
-            #         % self.outputs_amounts[i]
-            #         )
-            #     )
-            #     logging.info(f"SENDING transaction {transaction}")
-            #     self.output_exchanges[i].send_by_key(
-            #     message_protocol.internal.serialize(transaction), routing_key
-            #     )
-
-            # QUERY 3
-            composite_key_avg = transaction.get("payment_format", "")
-            routing_key_avg = "AvgCalc" + str(
-                zlib.crc32(composite_key_avg.encode("utf-8")) % self.outputs_amounts[0]
-            )
-            logging.info(f"SENDING AvgCalc transaction {transaction} -> {routing_key_avg}")
-            self.output_exchanges[0].send_by_key(
-                message_protocol.internal.serialize(transaction), routing_key_avg
-            )
-
-            # QUERY 4
-            routing_key_q4 = self.graph_router.get_node(
-                transaction.get("to_bank", ""),
-                transaction.get("to_account", ""),
-                transaction.get("from_bank", ""),
-                transaction.get("account", "")
-            )
-            self.output_exchanges[1].send_by_key(
-                message_protocol.internal.serialize(transaction), routing_key_q4
-            )
+            for i in range(len(self.output_exchanges)):
+                logging.info(f"ROUTING_HASH_TARGET I: {self.routing_hash_targets[i]}")
+                if '+' in self.routing_hash_targets[i]:
+                    self.graph_router = GraphRouter(self.outputs_amounts[i])
+                     # QUERY 4
+                    routing_key_q4 = self.graph_router.get_node(
+                        transaction.get("to_bank", ""),
+                        transaction.get("to_account", ""),
+                        transaction.get("from_bank", ""),
+                        transaction.get("account", "")
+                    )
+                    self.output_exchanges[i].send_by_key(
+                        message_protocol.internal.serialize(transaction), routing_key_q4
+                    )
+                else:
+                    routing_key = (
+                    self.outputs_prefix[i]
+                    + str(
+                        zlib.crc32(transaction[self.routing_hash_targets[i]].encode("utf-8"))
+                        % self.outputs_amounts[i]
+                        )
+                    )
+                    logging.info(f"SENDING transaction {transaction}")
+                    self.output_exchanges[i].send_by_key(
+                    message_protocol.internal.serialize(transaction), routing_key
+                    )
            
-        
-
+           
     def _process_eof(self, deserialized_message):
         client_id = deserialized_message["client_id"]
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1

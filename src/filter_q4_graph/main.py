@@ -141,8 +141,8 @@ class GraphFilter:
                 "total_amount": data["total_amount"],
                 "destinations": formatted_edges,
             }
-            print(
-                f"  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={formatted_edges}"
+            logging.info(
+                f"Transaction info:  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={formatted_edges}"
             )
             self._send_result(result, origin[0], origin[1])
 
