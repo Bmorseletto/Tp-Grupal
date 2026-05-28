@@ -1,0 +1,596 @@
+services:
+  client_0:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_0
+    depends_on:
+      - currency_filter_0
+      - currency_filter_1
+    environment:
+      - TRANSACTIONS_INPUT_FILE=/datasets/input_0.csv
+      - ACCOUNTS_INPUT_FILE=/datasets/accounts_0.csv
+      - OUTPUT_FILE=/output/output_0.csv
+      - PYTHONUNBUFFERED=1
+      - SERVER_HOST=gateway
+      - SERVER_PORT=5678
+    volumes:
+      - ./datasets:/datasets
+      - ./output:/output
+  client_1:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_1
+    depends_on:
+      - currency_filter_0
+      - currency_filter_1
+    environment:
+      - TRANSACTIONS_INPUT_FILE=/datasets/input_1.csv
+      - ACCOUNTS_INPUT_FILE=/datasets/accounts_1.csv
+      - OUTPUT_FILE=/output/output_1.csv
+      - PYTHONUNBUFFERED=1
+      - SERVER_HOST=gateway
+      - SERVER_PORT=5678
+    volumes:
+      - ./datasets:/datasets
+      - ./output:/output
+  client_2:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_2
+    depends_on:
+      - currency_filter_0
+      - currency_filter_1
+    environment:
+      - TRANSACTIONS_INPUT_FILE=/datasets/input_2.csv
+      - ACCOUNTS_INPUT_FILE=/datasets/accounts_2.csv
+      - OUTPUT_FILE=/output/output_2.csv
+      - PYTHONUNBUFFERED=1
+      - SERVER_HOST=gateway
+      - SERVER_PORT=5678
+    volumes:
+      - ./datasets:/datasets
+      - ./output:/output
+  gateway:
+    build:
+      context: ./src/
+      dockerfile: gateway/Dockerfile
+    container_name: gateway
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - INPUT_QUEUE=join_results_queue
+      - OUTPUT_QUEUE=Query2_Aggregator_accounts
+      - MOM_HOST=rabbitmq
+      - PYTHONUNBUFFERED=1
+      - SERVER_HOST=gateway
+      - SERVER_PORT=5678
+      - AMOUNT_CURRENCY=2
+      - CURRENCY_PREFIX=CurrencyFilter
+      - Q5_PREFIX=DateFilterQ5
+      - AMOUNT_Q5=1 
+  currency_filter_0:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: currency_filter_0
+    depends_on:
+      - dollar_amount_filter_0
+      - max_transaction_filter_0
+      - date_filter_0
+      - date_filter_1
+      - query_3_date_filter_0
+      - dollar_amount_filter_1
+      - dollar_amount_filter_2
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - AMOUNT_CURRENCY=2
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=CurrencyFilter
+      - FILTER_Q1_AMOUNT=3
+      - FILTER_Q1_PREFIX=DollarAmtFilter
+      - FILTER_Q2_AMOUNT=2
+      - FILTER_Q2_PREFIX=MaxTransactionFilter
+      - FILTER_Q3_AMOUNT=1
+      - FILTER_Q3_PREFIX=DateFilterQ3
+      # - FILTER_Q4_AMOUNT=0
+      # - FILTER_Q4_PREFIX=DateFilterQ4
+      # - FILTER_Q5_AMOUNT=1
+      # - FILTER_Q5_PREFIX=DateFilter
+      - FILTER_DATE_AMOUNT=2
+      - FILTER_DATE_PREFIX=DateFilter
+      - PYTHONUNBUFFERED=1
+  currency_filter_1:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: currency_filter_1
+    depends_on:
+      - dollar_amount_filter_0
+      - dollar_amount_filter_1
+      - dollar_amount_filter_2
+    environment:
+      - ID=1
+      - MOM_HOST=rabbitmq
+      - AMOUNT_CURRENCY=2
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=CurrencyFilter
+      - FILTER_Q1_AMOUNT=3
+      - FILTER_Q1_PREFIX=DollarAmtFilter
+      - FILTER_Q2_AMOUNT=2
+      - FILTER_Q2_PREFIX=MaxTransactionFilter
+      - FILTER_Q3_AMOUNT=1
+      - FILTER_Q3_PREFIX=DateFilterQ3
+      # - FILTER_Q4_AMOUNT=0
+      # - FILTER_Q4_PREFIX=DateFilterQ4
+      # - FILTER_Q5_AMOUNT=1
+      # - FILTER_Q5_PREFIX=DateFilter
+      - FILTER_DATE_AMOUNT=2
+      - FILTER_DATE_PREFIX=DateFilter
+      - PYTHONUNBUFFERED=1
+  dollar_amount_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q1/Dockerfile
+    container_name: dollar_amount_filter_0
+    depends_on:
+      - query_1_aggregator
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - OUTPUT_QUEUE=Query1_Aggregator
+      - FILTER_AMOUNT=3
+      - FILTER_PREFIX=DollarAmtFilter
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+  dollar_amount_filter_1:
+    build:
+      context: ./src/
+      dockerfile: filter_q1/Dockerfile
+    container_name: dollar_amount_filter_1
+    depends_on:
+      - query_1_aggregator
+    environment:
+      - ID=1
+      - MOM_HOST=rabbitmq
+      - OUTPUT_QUEUE=Query1_Aggregator
+      - FILTER_AMOUNT=3
+      - FILTER_PREFIX=DollarAmtFilter
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+  dollar_amount_filter_2:
+    build:
+      context: ./src/
+      dockerfile: filter_q1/Dockerfile
+    container_name: dollar_amount_filter_2
+    depends_on:
+      - query_1_aggregator
+    environment:
+      - ID=2
+      - MOM_HOST=rabbitmq
+      - OUTPUT_QUEUE=Query1_Aggregator
+      - FILTER_AMOUNT=3
+      - FILTER_PREFIX=DollarAmtFilter
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+  query_1_aggregator:
+    build:
+      context: ./src/
+      dockerfile: agg_q1/Dockerfile
+    container_name: query_1_aggregator
+    depends_on:
+      - join
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - INPUT_QUEUE=Query1_Aggregator
+      - OUTPUT_QUEUE=Join_Q1_Results
+      - Q1_FILTER_AMOUNT=3
+      - Q1_FILTER_PREFIX=DollarAmtFilter
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  query_2_aggregator:
+    build:
+      context: ./src/
+      dockerfile: agg_q2/Dockerfile
+    container_name: query_2_aggregator
+    depends_on:
+      - join
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - ACCOUNTS_FILE=/datasets/LI-Small_accounts.csv
+      - INPUT_QUEUE=Query2_Aggregator
+      - OUTPUT_QUEUE=Join_Q2_Results
+      - Q2_FILTER_AMOUNT=2
+      - Q2_FILTER_PREFIX=MaxTransactionFilter
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+
+  ###############################
+  #           QUERY 3           #
+  ###############################
+  query_3_aggregator:
+    build:
+      context: ./src/
+      dockerfile: agg_q3/Dockerfile
+    container_name: query_3_aggregator
+    depends_on:
+      - gateway
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - INPUT_QUEUE=Query3_Aggregator
+      - OUTPUT_QUEUE=Join_Q3_Results
+      - Q3_FILTER_AMOUNT=2
+      - Q3_FILTER_PREFIX=AvgFilter
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  query_3_avg_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q3_comparison/Dockerfile
+    container_name: query_3_avg_filter_0
+    depends_on:
+      - query_3_aggregator
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=2        # Cooperando con ID 1
+      - FILTER_PREFIX=AvgFilter
+      - OUTPUT_QUEUE=Query3_Aggregator
+      - AVG_CALC_AMOUNT=2      # Ahora recibe de 2 AvgCalc
+      - DATE_FILTER_AMOUNT=2   # Ahora recibe de 2 DateFilterQ3
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+
+  query_3_avg_filter_1:
+    build:
+      context: ./src/
+      dockerfile: filter_q3_comparison/Dockerfile
+    container_name: query_3_avg_filter_1
+    depends_on:
+      - query_3_aggregator
+    environment:
+      - ID=1                    # Nuevo ID
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=AvgFilter
+      - OUTPUT_QUEUE=Query3_Aggregator
+      - AVG_CALC_AMOUNT=2
+      - DATE_FILTER_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+
+  # ==========================================
+  # QUERY 3 AVG CALC
+  # ==========================================
+  query_3_avg_calc_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q3_avg/Dockerfile
+    container_name: query_3_avg_calc_0
+    depends_on:
+      - query_3_avg_filter_0
+      - query_3_avg_filter_1  # Depende de ambos filtros aguas abajo
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=2        # Cooperando con ID 1
+      - FILTER_PREFIX=AvgCalc
+      - OUTPUT_PREFIX=AvgFilter
+      - OUTPUT_AMOUNT=2        # Envía a 2 AvgFilters
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+
+  query_3_avg_calc_1:
+    build:
+      context: ./src/
+      dockerfile: filter_q3_avg/Dockerfile
+    container_name: query_3_avg_calc_1
+    depends_on:
+      - query_3_avg_filter_0
+      - query_3_avg_filter_1
+    environment:
+      - ID=1                    # Nuevo ID
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=AvgCalc
+      - OUTPUT_PREFIX=AvgFilter
+      - OUTPUT_AMOUNT=2
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+
+  # ==========================================
+  # QUERY 3 DATE FILTER
+  # ==========================================
+  query_3_date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: query_3_date_filter_0
+    depends_on:
+      - query_3_avg_filter_0
+      - query_3_avg_filter_1
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilterQ3
+      - OUTPUTS_PREFIX=AvgFilter
+      - OUTPUTS_AMOUNTS=2      # Envía a 2 AvgFilters
+      - UPSTREAM_AMOUNT=2
+      - ROUTING_HASH_TARGET=account
+      - INITIAL_DATE=2022/09/06
+      - END_DATE=2022/09/15
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+
+  query_3_date_filter_1:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: query_3_date_filter_1
+    depends_on:
+      - query_3_avg_filter_0
+      - query_3_avg_filter_1
+    environment:
+      - ID=1                    # Nuevo ID
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilterQ3
+      - OUTPUTS_PREFIX=AvgFilter
+      - OUTPUTS_AMOUNTS=2
+      - UPSTREAM_AMOUNT=2
+      - ROUTING_HASH_TARGET=account
+      - INITIAL_DATE=2022/09/06
+      - END_DATE=2022/09/15
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+
+  # ==========================================
+  # DATE FILTER (GENERAL)
+  # ==========================================
+  date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: date_filter_0
+    depends_on:
+      - query_3_avg_calc_0
+      - query_4_graph_0
+      - query_4_graph_1
+      - usd_converter_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilter
+      - OUTPUTS_PREFIX=AvgCalc,Q4Graph
+      - OUTPUTS_AMOUNTS=2,2
+      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
+      - UPSTREAM_AMOUNT=2
+      - INITIAL_DATE=2022/09/01
+      - END_DATE=2022/09/05
+      - PYTHONUNBUFFERED=1
+
+  date_filter_1:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: date_filter_1
+    depends_on:
+      - query_3_avg_calc_0
+      - query_3_avg_calc_1
+      - usd_converter_0
+    environment:
+      - ID=1                    # Nuevo ID
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilter
+      - OUTPUTS_PREFIX=AvgCalc,Q4Graph
+      - OUTPUTS_AMOUNTS=2,2
+      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
+      - UPSTREAM_AMOUNT=2
+      - INITIAL_DATE=2022/09/01
+      - END_DATE=2022/09/05
+      - PYTHONUNBUFFERED=1
+  ##############################################
+  ####### QUERY 4 ##############################
+  query_4_graph_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q4_graph/Dockerfile
+    container_name: query_4_graph_0
+    depends_on:
+      - query_4_scatter_detector_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=Q4Graph
+      - OUTPUT_PREFIX=Q4GScatterDetector
+      - OUTPUT_AMOUNT=1
+      - FILTER_DATE_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+
+  query_4_graph_1:
+    build:
+      context: ./src/
+      dockerfile: filter_q4_graph/Dockerfile
+    container_name: query_4_graph_1
+    depends_on:
+      - query_4_scatter_detector_0
+    environment:
+      - ID=1
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=Q4Graph
+      - OUTPUT_PREFIX=Q4GScatterDetector
+      - OUTPUT_AMOUNT=1
+      - FILTER_DATE_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  query_4_scatter_detector_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q4_scatter_gather/Dockerfile
+    container_name: query_4_scatter_detector_0
+    depends_on:
+      - query_4_agg_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=1
+      - SCATTER_DETECTOR_PREFIX=Q4GScatterDetector
+      - OUTPUT_PREFIX=Q4Agg
+      - OUTPUT_AMOUNT=1
+      - Q4_GRAPH_AMOUNT=2
+      - SCATTER_VALUE=2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  query_4_agg_0:
+    build:
+      context: ./src/
+      dockerfile: q4_agg/Dockerfile
+    container_name: query_4_agg_0
+    depends_on:
+      - join
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=1
+      - INPUT_QUEUE=Q4Agg
+      - OUTPUT_QUEUE=Join_Q4_Results
+      - Q4_SCATTER_AMOUNT=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  ##############################################
+  max_transaction_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q2/Dockerfile
+    container_name: max_transaction_filter_0
+    depends_on:
+      - query_2_aggregator
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - OUTPUT_QUEUE=Query2_Aggregator
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=MaxTransactionFilter
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+  max_transaction_filter_1:
+    build:
+      context: ./src/
+      dockerfile: filter_q2/Dockerfile
+    container_name: max_transaction_filter_1
+    depends_on:
+      - query_2_aggregator
+    environment:
+      - ID=1
+      - MOM_HOST=rabbitmq
+      - OUTPUT_QUEUE=Query2_Aggregator
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=MaxTransactionFilter
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+
+  usd_converter_0:
+    build:
+      context: ./src/
+      dockerfile: usd_converter/Dockerfile
+    container_name: usd_converter_0
+    depends_on:
+      - query_5_aggregator
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - OUTPUT_QUEUE=Query5_Aggregator
+      - FILTER_PREFIX=USDConverter
+      - FILTER_AMOUNT=1
+      - UPSTREAM_AMOUNT=1 
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+
+  query_5_aggregator:
+    build:
+      context: ./src/
+      dockerfile: agg_q5/Dockerfile
+    container_name: query_5_aggregator
+    depends_on:
+      - join
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - INPUT_QUEUE=Query5_Aggregator
+      - OUTPUT_QUEUE=Join_Q5_Results
+      - Q5_FILTER_AMOUNT=1
+      - Q5_FILTER_PREFIX=USDConverter
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  query_5_date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: query_5_date_filter_0
+    depends_on:
+      - usd_converter_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilterQ5
+      - OUTPUTS_PREFIX=USDConverter
+      - OUTPUTS_AMOUNTS=1      # Envía a 2 AvgFilters
+      - UPSTREAM_AMOUNT=1
+      - ROUTING_HASH_TARGET=account
+      - INITIAL_DATE=2022/09/01
+      - END_DATE=2022/09/05
+      - PYTHONUNBUFFERED=1
+  join:
+    build:
+      context: ./src/
+      dockerfile: join/Dockerfile
+    container_name: join
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - MOM_HOST=rabbitmq
+      - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q5_Results,Join_Q4_Results,Join_Q3_Results,
+      - OUTPUT_QUEUE=join_results_queue
+      - QUERY_AMOUNT=5
+      - PYTHONUNBUFFERED=1
+  rabbitmq:
+    build:
+      context: ./src/rabbitmq
+      dockerfile: Dockerfile
+    container_name: rabbitmq
+    environment:
+      - RABBITMQ_LOG_LEVELS=error
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 50s
+      test: rabbitmq-diagnostics check_port_connectivity
+      timeout: 3s
+    ports:
+      - 5672:5672
+      - 15672:15672
