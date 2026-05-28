@@ -376,7 +376,7 @@ services:
       - FILTER_PREFIX=DateFilter
       - OUTPUTS_PREFIX=AvgCalc,Q4Graph,USDConverter
       - OUTPUTS_AMOUNTS=2,2,1
-      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
+      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account,payment_format
       - UPSTREAM_AMOUNT=2
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
@@ -553,7 +553,7 @@ services:
         condition: service_healthy
     environment:
       - MOM_HOST=rabbitmq
-      - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q5_Results,Join_Q4_Results
+      - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q5_Results,Join_Q4_Results,Join_Q3_Results,
       - OUTPUT_QUEUE=join_results_queue
       - QUERY_AMOUNT=5
       - PYTHONUNBUFFERED=1
