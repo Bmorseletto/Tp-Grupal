@@ -70,6 +70,8 @@ services:
       - SERVER_PORT=5678
       - AMOUNT_CURRENCY=2
       - CURRENCY_PREFIX=CurrencyFilter
+      - Q5_PREFIX=DateFilterQ5
+      - AMOUNT_Q5=1 
   currency_filter_0:
     build:
       context: ./src/
@@ -374,9 +376,9 @@ services:
       - ID=0
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
-      - OUTPUTS_PREFIX=AvgCalc,Q4Graph,USDConverter
-      - OUTPUTS_AMOUNTS=2,2,1
-      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account,payment_format
+      - OUTPUTS_PREFIX=AvgCalc,Q4Graph
+      - OUTPUTS_AMOUNTS=2,2
+      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
       - UPSTREAM_AMOUNT=2
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
@@ -395,9 +397,9 @@ services:
       - ID=1                    # Nuevo ID
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
-      - OUTPUTS_PREFIX=AvgCalc,Q4Graph,USDConverter
-      - OUTPUTS_AMOUNTS=2,2,1
-      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account,payment_format
+      - OUTPUTS_PREFIX=AvgCalc,Q4Graph
+      - OUTPUTS_AMOUNTS=2,2
+      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
       - UPSTREAM_AMOUNT=2
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
@@ -522,6 +524,7 @@ services:
       - OUTPUT_QUEUE=Query5_Aggregator
       - FILTER_PREFIX=USDConverter
       - FILTER_AMOUNT=1
+      - UPSTREAM_AMOUNT=1 
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
@@ -543,6 +546,24 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
+  query_5_date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: query_5_date_filter_0
+    depends_on:
+      - usd_converter_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilterQ5
+      - OUTPUTS_PREFIX=USDConverter
+      - OUTPUTS_AMOUNTS=1      # Envía a 2 AvgFilters
+      - UPSTREAM_AMOUNT=1
+      - ROUTING_HASH_TARGET=account
+      - INITIAL_DATE=2022/09/01
+      - END_DATE=2022/09/15
+      - PYTHONUNBUFFERED=1
   join:
     build:
       context: ./src/

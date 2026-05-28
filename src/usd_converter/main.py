@@ -113,7 +113,7 @@ class USDConverter:
             transaction["currency"] = "US Dollar"
             logging.debug(f"Converted MESSAGE {transaction}")
             
-        if transaction["payment_format"] == "Wire" and transaction["amount_paid"] < 1:
+        if (transaction["payment_format"] == "Wire" or transaction["payment_format"] == "ACH")  and transaction["amount_paid"] < 1:
             transaction["nodo_id"] = ID
             self.output_queue.send(message_protocol.internal.serialize(transaction))
     
@@ -123,8 +123,7 @@ class USDConverter:
     
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
-        logging.debug(f"MESSAGE {deserialized_message}")
-        logging.debug(f"MESSAGE {deserialized_message}")
+        logging.info(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)
         else:    
@@ -145,7 +144,7 @@ class USDConverter:
 
 
 def main():
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
     usd_converter_filter = USDConverter()
     signal.signal(
         signal.SIGTERM,
