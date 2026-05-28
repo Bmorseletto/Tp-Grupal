@@ -35,7 +35,7 @@ class AggregatorQ5:
         if len(self.worker_finished_with_client[client_id]) == Q5_FILTER_AMOUNT:
             count = self.count.pop(client_id, 0)
             self.output_queue.send(
-                message_protocol.internal.serialize([client_id, "q5", {"count": count}])
+                message_protocol.internal.serialize([client_id, "q5", [{"count": count}]])
             )
             del self.worker_finished_with_client[client_id]
 

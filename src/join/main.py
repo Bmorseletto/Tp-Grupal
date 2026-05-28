@@ -118,7 +118,7 @@ class JoinNode:
 
 def main():
     try:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.INFO)
         join = JoinNode()
         signal.signal(
             signal.SIGTERM,
