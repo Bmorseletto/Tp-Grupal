@@ -139,13 +139,13 @@ class USDConverter:
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    dollar_amt_filter = USDConverter()
+    usd_converter_filter = USDConverter()
     signal.signal(
         signal.SIGTERM,
-        lambda signum, frame: dollar_amt_filter.stop(),
+        lambda signum, frame: usd_converter_filter.stop(),
     )
-    dollar_amt_filter.start()
-    dollar_amt_filter.close()
+    usd_converter_filter.start()
+    usd_converter_filter.close()
     return 0
 
 
