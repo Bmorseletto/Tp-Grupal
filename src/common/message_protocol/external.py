@@ -236,7 +236,7 @@ def _send_results(socket, results):
         for result in query_results:
             msg += external_serializer.serialize_uint32(len(result))
             msg += _serialize_result_row(result)
-    logging.info(f"MESSAGE {msg}")
+    logging.debug(f"MESSAGE {msg}")
     socket.sendall(msg)
 
 

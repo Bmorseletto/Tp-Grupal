@@ -37,7 +37,7 @@ class MaxTransactionFilter:
         if bank_id in self.max_transaction_per_bank[client_id].keys():
             if self.max_transaction_per_bank[client_id][bank_id][AMMOUNT_PAID_KEY] >= transaction[AMMOUNT_PAID_KEY]:
                 return
-        logging.info(f"TRANSDACTION {transaction}")
+        logging.debug(f"TRANSDACTION {transaction}")
         self.max_transaction_per_bank[client_id][bank_id] = transaction
     
 
@@ -46,13 +46,14 @@ class MaxTransactionFilter:
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         if self.eof_count[client_id] < UPSTREAM_AMOUNT:
             return
-        results = list(self.max_transaction_per_bank[deserialized_message[CLIENT_ID_KEY]].values())
-        logging.info(f"Sending max values {results}, to {OUTPUT_QUEUE}")
-        self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, CLIENT_ID_KEY:deserialized_message[CLIENT_ID_KEY], "results": results} ))
+        results = list(self.max_transaction_per_bank.get(client_id, {}).values())
+        if results:
+            logging.info(f"Sending max values {results}, to {OUTPUT_QUEUE}")
+            self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, CLIENT_ID_KEY: client_id, "results": results} ))
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {deserialized_message}")
+        logging.debug(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)
         else:    
