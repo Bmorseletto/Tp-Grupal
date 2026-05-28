@@ -55,22 +55,22 @@ class AvgCalculator:
     def _process_eof(self, deserialized_message):
         client_id = deserialized_message["client_id"]
         logging.info(f"transactions per payment: {self.transactions_per_payment_format}")
-        for payment_format, data in self.transactions_per_payment_format[client_id].items():
-            average = {
-                "avg": data["total amount paid"] / data["transactions"], 
-                "payment_format": payment_format
-            }
-            with open(AVG_STORAGE+f"{client_id}.csv", "a") as csvfile:
-                fcntl.flock(csvfile, fcntl.LOCK_EX)
-                try:
-                    csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-                    csv_writer.writerow(average.values())
-                except Exception as e:
-                    logging.error(f"ERROR: {e}")
-                finally:
-                    fcntl.flock(csvfile, fcntl.LOCK_UN)
-            logging.info(f"writing {average} down")
-            #self.output_queue.send(message_protocol.internal.serialize(average))
+        if client_id in self.transactions_per_payment_format.keys():
+            for payment_format, data in self.transactions_per_payment_format[client_id].items():
+                average = {
+                    "avg": data["total amount paid"] / data["transactions"], 
+                    "payment_format": payment_format
+                }
+                with open(AVG_STORAGE+f"{client_id}.csv", "a") as csvfile:
+                    fcntl.flock(csvfile, fcntl.LOCK_EX)
+                    try:
+                        csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                        csv_writer.writerow(average.values())
+                    except Exception as e:
+                        logging.error(f"ERROR: {e}")
+                    finally:
+                        fcntl.flock(csvfile, fcntl.LOCK_UN)
+                logging.info(f"writing {average} down")
         logging.info(f"SENDING EOF")
         self.output_exchange.send_by_key(message_protocol.internal.serialize({"nodo_id":ID, "client_id":client_id, "avg": True}), OUTPUT_PREFIX)
 

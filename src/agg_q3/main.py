@@ -51,23 +51,24 @@ class JoinFilterQ3:
             if client_id not in self.worker_finished_with_client.keys():
                 self.worker_finished_with_client[client_id] = set()
             self.worker_finished_with_client[client_id].add(nodo_id)
+            
             if len(self.worker_finished_with_client[client_id]) == Q3_FILTER_AMOUNT:
-                with open(RESULTS_STORAGE+f"{client_id}.csv", "r", newline="") as csvfile:
-                    csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
-                    results = []
-                    for transaction in csv_reader:
-                        logging.info(f"sending transaction: {transaction}, to gateway")
-                        values = {
-                            "account" : transaction[0],
-                            "amount_paid" : transaction[1],
-                            "payment_format":  transaction[2]
-                        }
-                        results.append(values)
-                    #self.output_queue.send(message_protocol.internal.serialize([client_id,results]))
-                os.remove(RESULTS_STORAGE+f"{client_id}.csv")
-                os.remove(AVG_STORAGE+f"{client_id}.csv")
-                for i in range(Q3_FILTER_AMOUNT):
-                    os.remove(TRANSACTION_STORAGE+f"{client_id}_{i}.csv")
+                results = []
+                if os.path.isfile(RESULTS_STORAGE+f"{client_id}.csv"):
+                    with open(RESULTS_STORAGE+f"{client_id}.csv", "r", newline="") as csvfile:
+                        csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
+                        for transaction in csv_reader:
+                            logging.info(f"sending transaction: {transaction}, to gateway")
+                            values = {
+                                "account" : transaction[0],
+                                "amount_paid" : transaction[1],
+                                "payment_format":  transaction[2]
+                            }
+                            results.append(values)
+                    os.remove(RESULTS_STORAGE+f"{client_id}.csv")
+                self.output_queue.send(message_protocol.internal.serialize([client_id,"q3",results]))
+                if os.path.isfile(AVG_STORAGE+f"{client_id}.csv"):
+                    os.remove(AVG_STORAGE+f"{client_id}.csv")
                 logging.info(f"Q3 RESULTS TRANSACTIONS SENT")
         except Exception as e:
             logging.error(f"ERROR: {e}")
