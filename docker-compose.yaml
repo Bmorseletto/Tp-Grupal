@@ -562,7 +562,7 @@ services:
       - UPSTREAM_AMOUNT=1
       - ROUTING_HASH_TARGET=account
       - INITIAL_DATE=2022/09/01
-      - END_DATE=2022/09/15
+      - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
   join:
     build:
