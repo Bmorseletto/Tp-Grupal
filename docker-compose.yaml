@@ -203,13 +203,13 @@ services:
       dockerfile: filter_q4_graph/Dockerfile
     container_name: query_4_graph_0
     depends_on:
-      - gateway
+      - query_4_scatter_detector_0
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
       - FILTER_AMOUNT=2
       - FILTER_PREFIX=Q4Graph
-      - OUTPUT_PREFIX=Q4Filter
+      - OUTPUT_PREFIX=Q4GScatterDetector
       - OUTPUT_AMOUNT=1
       - FILTER_DATE_AMOUNT=1
       - PYTHONUNBUFFERED=1
@@ -222,15 +222,51 @@ services:
       dockerfile: filter_q4_graph/Dockerfile
     container_name: query_4_graph_1
     depends_on:
-      - gateway
+      - query_4_scatter_detector_0
     environment:
       - ID=1
       - MOM_HOST=rabbitmq
       - FILTER_AMOUNT=2
       - FILTER_PREFIX=Q4Graph
-      - OUTPUT_PREFIX=Q4Filter
+      - OUTPUT_PREFIX=Q4GScatterDetector
       - OUTPUT_AMOUNT=1
       - FILTER_DATE_AMOUNT=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  query_4_scatter_detector_0:
+    build:
+      context: ./src/
+      dockerfile: filter_q4_scatter_gather/Dockerfile
+    container_name: query_4_scatter_detector_0
+    depends_on:
+      - query_4_agg_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=1
+      - SCATTER_DETECTOR_PREFIX=Q4GScatterDetector
+      - OUTPUT_PREFIX=Q4Agg
+      - OUTPUT_AMOUNT=1
+      - Q4_GRAPH_AMOUNT=2
+      - SCATTER_VALUE=2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+  query_4_agg_0:
+    build:
+      context: ./src/
+      dockerfile: q4_agg/Dockerfile
+    container_name: query_4_agg_0
+    depends_on:
+      - gateway
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=1
+      - INPUT_QUEUE=Q4Agg
+      - OUTPUT_QUEUE=gateway
+      - Q4_SCATTER_AMOUNT=1
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
