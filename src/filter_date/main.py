@@ -18,48 +18,74 @@ END_DATE =  os.environ["END_DATE"]
 DONE = True
 WORKING = False
 
-class GraphRouter:
+import os, csv, fcntl
+
+COMPONENTS_FILE = "/output/q4_graph_components.csv"
+
+
+class GraphRouterCSV:
     def __init__(self, num_nodes):
-        self.parent = {} # El padre sería la cuenta que inicia el scatter gather
         self.num_nodes = num_nodes
-        self.component_id = {} # ID de grupo de banco-cuentas
-        self.next_id = 0
+        os.makedirs(os.path.dirname(COMPONENTS_FILE), exist_ok=True)
+        if not os.path.exists(COMPONENTS_FILE):
+            with open(COMPONENTS_FILE, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=["rep", "comp_id"])
+                writer.writeheader()
 
-    def find(self, x):
-        if self.parent.get(x, x) != x:
-            self.parent[x] = self.find(self.parent[x])
-        return self.parent.get(x, x)
+    def _load_components(self):
+        components = {}
+        with open(COMPONENTS_FILE, "r", newline="") as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            reader = csv.DictReader(f)
+            for row in reader:
+                components[row["rep"]] = int(row["comp_id"])
+            fcntl.flock(f, fcntl.LOCK_UN)
+        return components
 
-    def union(self, a, b):
-        # se unen las cuentas conectadas.
-        # Ej.: A->B y B->C, por ende A, B y C son del mismo grupo => van a la misma routing key
-        pa, pb = self.find(a), self.find(b)
-        if pa != pb:
-            # unimos pb en pa
-            self.parent[pb] = pa
-            # propagación comp_id
-            if pb in self.component_id:
-                self.component_id[pa] = self.component_id[pb]
-            elif pa in self.component_id:
-                self.component_id[pb] = self.component_id[pa]
+    def _rewrite_components(self, components):
+        """Reescribe todo el CSV con el dict actualizado"""
+        with open(COMPONENTS_FILE, "w", newline="") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            writer = csv.DictWriter(f, fieldnames=["rep", "comp_id"])
+            writer.writeheader()
+            for rep, comp_id in components.items():
+                writer.writerow({"rep": rep, "comp_id": comp_id})
+            fcntl.flock(f, fcntl.LOCK_UN)
 
     def get_node(self, to_bank, to_account, from_bank, from_account):
-        to = f"{to_bank}:{to_account}"
-        fr = f"{from_bank}:{from_account}"
-        self.union(to, fr)
-        rep = self.find(to)
+        rep_to = f"{to_bank}:{to_account}"
+        rep_fr = f"{from_bank}:{from_account}"
+        components = self._load_components()
 
-        # asignar id al componente (si es que no existia de antes)
-        if rep not in self.component_id:
-            self.component_id[rep] = self.next_id
-            self.next_id += 1
+        if rep_to not in components and rep_fr not in components:
+            # nuevo componente
+            comp_id = len(components)
+            components[rep_to] = comp_id
+            components[rep_fr] = comp_id
+            self._rewrite_components(components)
+        elif rep_to in components and rep_fr not in components:
+            comp_id = components[rep_to]
+            components[rep_fr] = comp_id
+            self._rewrite_components(components)
+        elif rep_fr in components and rep_to not in components:
+            comp_id = components[rep_fr]
+            components[rep_to] = comp_id
+            self._rewrite_components(components)
+        else:
+            # ambos existen: si tienen comp_id distinto, unificar
+            comp_id_to = components[rep_to]
+            comp_id_fr = components[rep_fr]
+            if comp_id_to != comp_id_fr:
+                # normalizar: todos los reps con comp_id_fr pasan a comp_id_to
+                for rep, cid in components.items():
+                    if cid == comp_id_fr:
+                        components[rep] = comp_id_to
+                comp_id = comp_id_to
+                self._rewrite_components(components)
+            else:
+                comp_id = comp_id_to
 
-        comp_id = self.component_id[rep]
         routing_key = "Q4Graph" + str(comp_id % self.num_nodes)
-        logging.info(
-            f"GRAPH GET NODE: {to_bank}, {to_account}, {from_bank}, {from_account} "
-            f"| rep={rep} | comp_id={comp_id} | routing key={routing_key}"
-        )
         return routing_key
 
 class DateFilter:
@@ -85,7 +111,7 @@ class DateFilter:
             for i in range(len(self.outputs_prefix))
         ]
 
-        self.graph_router = GraphRouter(self.outputs_amounts[1])
+        self.graph_router = GraphRouterCSV(self.outputs_amounts[1])
         logging.info(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
         logging.info(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
 
@@ -98,19 +124,6 @@ class DateFilter:
         logging.info(f"date comp: {initial_date <= transaction_timestamp <= end_date}")
 
         if initial_date <= transaction_timestamp <= end_date:
-            # for i in range(len(self.output_exchanges)):
-            #     routing_key = (
-            #     self.outputs_prefix[i]
-            #     + str(
-            #         zlib.crc32(transaction[self.routing_hash_targets[i]].encode("utf-8"))
-            #         % self.outputs_amounts[i]
-            #         )
-            #     )
-            #     logging.info(f"SENDING transaction {transaction}")
-            #     self.output_exchanges[i].send_by_key(
-            #     message_protocol.internal.serialize(transaction), routing_key
-            #     )
-
             # QUERY 3
             composite_key_avg = transaction.get("payment_format", "")
             routing_key_avg = "AvgCalc" + str(
@@ -126,8 +139,9 @@ class DateFilter:
                 transaction.get("to_bank", ""),
                 transaction.get("to_account", ""),
                 transaction.get("from_bank", ""),
-                transaction.get("account", "")
+                transaction.get("account", "")   # ojo: aquí es 'account', no 'from_account'
             )
+            logging.info(f"SENDING Q4Graph transaction {transaction} -> {routing_key_q4}")
             self.output_exchanges[1].send_by_key(
                 message_protocol.internal.serialize(transaction), routing_key_q4
             )
