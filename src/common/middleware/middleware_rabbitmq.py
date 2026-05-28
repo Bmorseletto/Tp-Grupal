@@ -107,9 +107,10 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
                 raise MessageMiddlewareMessageError(str(e))
 
     def close(self):
-        try:
-            self.stop_consuming()
-            self._connection.close()
+        try:   
+            if self._channel.is_open:
+                self.stop_consuming()
+                self._connection.close()
         except Exception as e:
             raise MessageMiddlewareCloseError(str(e))
 

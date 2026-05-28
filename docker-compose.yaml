@@ -215,7 +215,7 @@ services:
       - MOM_HOST=rabbitmq
       - INPUT_QUEUE=Query3_Aggregator
       - OUTPUT_QUEUE=Join_Q3_Results
-      - Q3_FILTER_AMOUNT=1
+      - Q3_FILTER_AMOUNT=2
       - Q3_FILTER_PREFIX=AvgFilter
       - PYTHONUNBUFFERED=1
     volumes:
@@ -230,14 +230,37 @@ services:
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
-      - FILTER_AMOUNT=1
+      - FILTER_AMOUNT=2        # Cooperando con ID 1
       - FILTER_PREFIX=AvgFilter
       - OUTPUT_QUEUE=Query3_Aggregator
-      - AVG_CALC_AMOUNT=1
-      - DATE_FILTER_AMOUNT=1
+      - AVG_CALC_AMOUNT=2      # Ahora recibe de 2 AvgCalc
+      - DATE_FILTER_AMOUNT=2   # Ahora recibe de 2 DateFilterQ3
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
+
+  query_3_avg_filter_1:
+    build:
+      context: ./src/
+      dockerfile: filter_q3_comparison/Dockerfile
+    container_name: query_3_avg_filter_1
+    depends_on:
+      - query_3_aggregator
+    environment:
+      - ID=1                    # Nuevo ID
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=AvgFilter
+      - OUTPUT_QUEUE=Query3_Aggregator
+      - AVG_CALC_AMOUNT=2
+      - DATE_FILTER_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+
+  # ==========================================
+  # QUERY 3 AVG CALC
+  # ==========================================
   query_3_avg_calc_0:
     build:
       context: ./src/
@@ -245,16 +268,42 @@ services:
     container_name: query_3_avg_calc_0
     depends_on:
       - query_3_avg_filter_0
+      - query_3_avg_filter_1  # Depende de ambos filtros aguas abajo
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
-      - FILTER_AMOUNT=1
+      - FILTER_AMOUNT=2        # Cooperando con ID 1
       - FILTER_PREFIX=AvgCalc
       - OUTPUT_PREFIX=AvgFilter
-      - OUTPUT_AMOUNT=1
+      - OUTPUT_AMOUNT=2        # Envía a 2 AvgFilters
+      - UPSTREAM_AMOUNT=2
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
+
+  query_3_avg_calc_1:
+    build:
+      context: ./src/
+      dockerfile: filter_q3_avg/Dockerfile
+    container_name: query_3_avg_calc_1
+    depends_on:
+      - query_3_avg_filter_0
+      - query_3_avg_filter_1
+    environment:
+      - ID=1                    # Nuevo ID
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=AvgCalc
+      - OUTPUT_PREFIX=AvgFilter
+      - OUTPUT_AMOUNT=2
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+
+  # ==========================================
+  # QUERY 3 DATE FILTER
+  # ==========================================
   query_3_date_filter_0:
     build:
       context: ./src/
@@ -262,17 +311,44 @@ services:
     container_name: query_3_date_filter_0
     depends_on:
       - query_3_avg_filter_0
+      - query_3_avg_filter_1
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilterQ3
       - OUTPUTS_PREFIX=AvgFilter
-      - OUTPUTS_AMOUNTS=1
+      - OUTPUTS_AMOUNTS=2      # Envía a 2 AvgFilters
+      - UPSTREAM_AMOUNT=2
       - ROUTING_HASH_TARGET=account
       - INITIAL_DATE=2022/09/06
       - END_DATE=2022/09/15
       - UPSTREAM_AMOUNT=2
       - PYTHONUNBUFFERED=1
+
+  query_3_date_filter_1:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: query_3_date_filter_1
+    depends_on:
+      - query_3_avg_filter_0
+      - query_3_avg_filter_1
+    environment:
+      - ID=1                    # Nuevo ID
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilterQ3
+      - OUTPUTS_PREFIX=AvgFilter
+      - OUTPUTS_AMOUNTS=2
+      - UPSTREAM_AMOUNT=2
+      - ROUTING_HASH_TARGET=account
+      - INITIAL_DATE=2022/09/06
+      - END_DATE=2022/09/15
+      - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+
+  # ==========================================
+  # DATE FILTER (GENERAL)
+  # ==========================================
   date_filter_0:
     build:
       context: ./src/
@@ -280,12 +356,34 @@ services:
     container_name: date_filter_0
     depends_on:
       - query_3_avg_calc_0
+      - query_3_avg_calc_1
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
       - OUTPUTS_PREFIX=AvgCalc
-      - OUTPUTS_AMOUNTS=1
+      - OUTPUTS_AMOUNTS=2      # Envía a 2 AvgCalcs
+      - UPSTREAM_AMOUNT=2
+      - ROUTING_HASH_TARGET=payment_format
+      - INITIAL_DATE=2022/09/01
+      - END_DATE=2022/09/05
+      - PYTHONUNBUFFERED=1
+
+  date_filter_1:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: date_filter_1
+    depends_on:
+      - query_3_avg_calc_0
+      - query_3_avg_calc_1
+    environment:
+      - ID=1                    # Nuevo ID
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilter
+      - OUTPUTS_PREFIX=AvgCalc
+      - OUTPUTS_AMOUNTS=2
+      - UPSTREAM_AMOUNT=2
       - ROUTING_HASH_TARGET=payment_format
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
@@ -334,6 +432,7 @@ services:
       - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q3_Results
       - OUTPUT_QUEUE=join_results_queue
       - QUERY_AMOUNT=3
+      # - JOIN_STATE_DIR=/join_state
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output

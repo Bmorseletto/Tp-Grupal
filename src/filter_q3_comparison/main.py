@@ -45,15 +45,6 @@ class AvgFilter:
             csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
             csv_writer.writerow(data.values())
             logging.info(f"writing {data} down")
-    
-    #def _process_average(self, data):
-    #    logging.info(f"average data {data}")
-    #    client_id= data.pop("client_id")
-    #    logging.info(f"processing data OF {client_id}")
-    #    with open(AVG_STORAGE+f"{client_id}_{ID}.csv", "a") as csvfile:
-    #        csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-    #        csv_writer.writerow(data.values())
-    #        logging.info(f"writing {data} down")
 
     def _process_eof(self, deserialized_message):
         try:
@@ -66,7 +57,6 @@ class AvgFilter:
             if "avg" in deserialized_message.keys():
                 self.avg_worker_finished_with_client[client_id].add(nodo_id)
             else:
-                logging.info("new date fliter node entry")
                 self.date_filter_finished_with_client[client_id].add(nodo_id)
             if len(self.date_filter_finished_with_client[client_id]) < DATE_FILTER_AMOUNT or len(self.avg_worker_finished_with_client[client_id]) < AVG_CALC_AMOUNT:
                 logging.info("WAITING FOR PREVIOUS WORKERS TO FINISH")
@@ -83,6 +73,8 @@ class AvgFilter:
                 self.output_queue.send(message_protocol.internal.serialize({"results": result}))
                 process.join()
             self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, "client_id":client_id}))
+            if os.path.isfile(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv"):
+                os.remove(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv")
         except Exception as e:
             logging.error(f"ERROR: {e}")
 
@@ -112,7 +104,7 @@ class AvgFilter:
 
 def _get_payment_formats(client_id):
     averages = {}
-    for id in range(AVG_CALC_AMOUNT):
+    if os.path.isfile(AVG_STORAGE+f"{client_id}.csv"):
         with open(AVG_STORAGE+f"{client_id}.csv", "r") as csvfile:
             fcntl.flock(csvfile, fcntl.LOCK_SH)
             try:
@@ -129,26 +121,27 @@ def _filter_transactions(payment_format,average,results_queue, client_id):
     logging.basicConfig(level=logging.INFO)
     transactions = []
     logging.info(f"payment_format: {payment_format}, average: {average/100}")
-    with open(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv", "r") as csvfile:
-        fcntl.flock(csvfile, fcntl.LOCK_SH)
-        try:
-            csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
-            for line in csv_reader:
-                logging.info(f"file line: {line}, payment_format: {payment_format}, average: {average/100}")
-                if line[3] != payment_format:
-                    continue
-                if float(line[1]) < (average/100):
-                    transaction ={
-                        "client_id": client_id,
-                        "account": line[0],
-                        "amount_paid": line[1],
-                        "payment_format": line[3]
-                    }
-                    transactions.append(transaction)
-        except Exception as e:
-            logging.error(f"ERROR {e}")
-        finally:
-            fcntl.flock(csvfile, fcntl.LOCK_UN)
+    if os.path.isfile(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv"):
+        with open(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv", "r") as csvfile:
+            fcntl.flock(csvfile, fcntl.LOCK_SH)
+            try:
+                csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
+                for line in csv_reader:
+                    logging.info(f"file line: {line}, payment_format: {payment_format}, average: {average/100}")
+                    if line[3] != payment_format:
+                        continue
+                    if float(line[1]) < (average/100):
+                        transaction ={
+                            "client_id": client_id,
+                            "account": line[0],
+                            "amount_paid": line[1],
+                            "payment_format": line[3]
+                        }
+                        transactions.append(transaction)
+            except Exception as e:
+                logging.error(f"ERROR {e}")
+            finally:
+                fcntl.flock(csvfile, fcntl.LOCK_UN)
     results_queue.put(transactions)
 
 def main():

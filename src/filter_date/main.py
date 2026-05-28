@@ -17,6 +17,7 @@ INITIAL_DATE = os.environ["INITIAL_DATE"]
 END_DATE =  os.environ["END_DATE"]
 DONE = True
 WORKING = False
+UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 
 class DateFilter:
 
@@ -40,6 +41,7 @@ class DateFilter:
             )
             for i in range(len(self.outputs_prefix))
         ]
+        self.eof_count = {}
 
     def _process_data(self, transaction):
         
@@ -65,6 +67,10 @@ class DateFilter:
         
 
     def _process_eof(self, deserialized_message):
+        client_id = deserialized_message["client_id"]
+        self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
+        if self.eof_count[client_id] < UPSTREAM_AMOUNT:
+            return
         for i, output_exchange in enumerate(self.output_exchanges):
             output_exchange.send_by_key(
                 message_protocol.internal.serialize(
@@ -84,28 +90,26 @@ class DateFilter:
 
     def start(self):
         self.input_exchange.start_consuming(self.process_messsage)
-        self.input_exchange.close()
-        for exchange in self.output_exchanges:
-            exchange.close()
 
     
     def stop(self):
+        logging.info(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
         self.input_exchange.stop_consuming()
     def close(self):
         self.input_exchange.close()
-        for exchange in self.output_exchanges():
+        for exchange in self.output_exchanges:
             exchange.close()
        
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    dollar_amt_filter = DateFilter()
+    date_filter = DateFilter()
     signal.signal(
         signal.SIGTERM,
-        lambda signum, frame: dollar_amt_filter.stop(),
+        lambda signum, frame: date_filter.stop(),
     )
-    dollar_amt_filter.start()
-    dollar_amt_filter.close()
+    date_filter.start()
+    date_filter.close()
     return 0
 
 
