@@ -362,7 +362,7 @@ services:
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
       - OUTPUTS_PREFIX=AvgCalc
-      - OUTPUTS_AMOUNTS=2      # Envía a 2 AvgCalcs
+      - OUTPUTS_AMOUNTS=2 
       - UPSTREAM_AMOUNT=2
       - ROUTING_HASH_TARGET=payment_format
       - INITIAL_DATE=2022/09/01
@@ -432,10 +432,7 @@ services:
       - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q3_Results
       - OUTPUT_QUEUE=join_results_queue
       - QUERY_AMOUNT=3
-      # - JOIN_STATE_DIR=/join_state
       - PYTHONUNBUFFERED=1
-    volumes:
-      - ./output:/output
   rabbitmq:
     build:
       context: ./src/rabbitmq
