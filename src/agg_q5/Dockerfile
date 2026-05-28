@@ -1,8 +1,8 @@
 FROM python:3-alpine
 
-RUN pip3 install pika requests
+RUN pip3 install pika
 
 COPY common ./common
-COPY usd_converter .
+COPY agg_q5 .
 
 ENTRYPOINT ["python3", "main.py"]
