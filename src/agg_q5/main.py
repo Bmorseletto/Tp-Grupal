@@ -25,7 +25,7 @@ class AggregatorQ5:
     def _process_data(self, transaction: dict):
         client_id = transaction.pop("client_id")
         self.count[client_id] = self.count.get(client_id, 0) + 1
-        logging.info(f"Processed transaction for client {client_id}. Current count: {self.count[client_id]}")
+        logging.debug(f"Processed transaction for client {client_id}. Current count: {self.count[client_id]}")
 
     def _process_eof(self, eof_message):
         client_id = eof_message["client_id"]
@@ -41,6 +41,7 @@ class AggregatorQ5:
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
+        logging.debug(f"Received message: {deserialized_message}")
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)
         else:
@@ -60,7 +61,7 @@ class AggregatorQ5:
 
 def main():
     try:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.DEBUG)
         aggregator = AggregatorQ5()
         signal.signal(
             signal.SIGTERM,

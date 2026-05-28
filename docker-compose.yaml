@@ -70,6 +70,8 @@ services:
       - SERVER_PORT=5678
       - AMOUNT_CURRENCY=2
       - CURRENCY_PREFIX=CurrencyFilter
+      - FILTER_DATE_AMOUNT=1
+      - FILTER_DATE_PREFIX=DateFilterQ5
   currency_filter_0:
     build:
       context: ./src/
@@ -364,15 +366,14 @@ services:
     depends_on:
       - query_3_avg_calc_0
       - query_3_avg_calc_1
-      - usd_converter_0
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
-      - OUTPUTS_PREFIX=AvgCalc,USDConverter
-      - OUTPUTS_AMOUNTS=2,1     # Envía a 2 AvgCalcs
+      - OUTPUTS_PREFIX=AvgCalc
+      - OUTPUTS_AMOUNTS=2     # Envía a 2 AvgCalcs
       - UPSTREAM_AMOUNT=2
-      - ROUTING_HASH_TARGET=payment_format,payment_format
+      - ROUTING_HASH_TARGET=payment_format
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
@@ -385,15 +386,14 @@ services:
     depends_on:
       - query_3_avg_calc_0
       - query_3_avg_calc_1
-      - usd_converter_0
     environment:
       - ID=1                    # Nuevo ID
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
-      - OUTPUTS_PREFIX=AvgCalc,USDConverter
-      - OUTPUTS_AMOUNTS=2,1
+      - OUTPUTS_PREFIX=AvgCalc
+      - OUTPUTS_AMOUNTS=2
       - UPSTREAM_AMOUNT=2
-      - ROUTING_HASH_TARGET=payment_format,payment_format
+      - ROUTING_HASH_TARGET=payment_format
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
@@ -427,6 +427,25 @@ services:
       - FILTER_AMOUNT=2
       - FILTER_PREFIX=MaxTransactionFilter
       - UPSTREAM_AMOUNT=2
+      - PYTHONUNBUFFERED=1
+
+  query_5_date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filter_date/Dockerfile
+    container_name: query_5_date_filter_0
+    depends_on:
+      - usd_converter_0
+    environment:
+      - ID=0
+      - MOM_HOST=rabbitmq
+      - FILTER_PREFIX=DateFilterQ5
+      - OUTPUTS_PREFIX=USDConverter
+      - OUTPUTS_AMOUNTS=1
+      - UPSTREAM_AMOUNT=2
+      - ROUTING_HASH_TARGET=payment_format
+      - INITIAL_DATE=2022/09/01
+      - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
 
   usd_converter_0:
@@ -473,7 +492,7 @@ services:
         condition: service_healthy
     environment:
       - MOM_HOST=rabbitmq
-      - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q5_Results
+      - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q3_Results,Join_Q5_Results
       - OUTPUT_QUEUE=join_results_queue
       - QUERY_AMOUNT=4
       # - JOIN_STATE_DIR=/join_state

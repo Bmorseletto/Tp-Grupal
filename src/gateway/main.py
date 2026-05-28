@@ -16,6 +16,8 @@ INPUT_QUEUE = os.environ["INPUT_QUEUE"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 AMOUNT_CURRENCY_FILTERS = int(os.environ["AMOUNT_CURRENCY"])
 CURRENCY_PREFIX = os.environ["CURRENCY_PREFIX"]
+FILTER_DATE_AMOUNT = int(os.environ["FILTER_DATE_AMOUNT"])
+FILTER_DATE_PREFIX = os.environ["FILTER_DATE_PREFIX"]
 
 # AMOUNT_RESULTS = 2
 
@@ -28,6 +30,15 @@ def handle_client_request(client_socket, message_handler):
     accounts_output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
             MOM_HOST, OUTPUT_QUEUE
         )
+    date_filter_exchange =  middleware.MessageMiddlewareExchangeRabbitMQ(
+        MOM_HOST,
+        FILTER_DATE_PREFIX,
+        [FILTER_DATE_PREFIX]
+        + [
+            FILTER_DATE_PREFIX + str(j)
+            for j in range(FILTER_DATE_AMOUNT)
+        ],
+    )
     try:
         while True:
             message = message_protocol.external.recv_msg(client_socket)
@@ -38,6 +49,15 @@ def handle_client_request(client_socket, message_handler):
                 serialized_message = message_handler.serialize_transaction_message(message[1])
                 routing_key = str(zlib.crc32(message[1].account.encode('utf-8')) % AMOUNT_CURRENCY_FILTERS)
                 data_output_exchange.send_by_key(serialized_message, routing_key)
+                routing_key = (
+                    FILTER_DATE_PREFIX
+                    + str(
+                        zlib.crc32(message[1].account.encode("utf-8"))
+                        % FILTER_DATE_AMOUNT
+                    )
+                ) 
+                logging.info(f"routing key for date {routing_key}")
+                date_filter_exchange.send_by_key(serialized_message, routing_key)
 
             elif message[0] == message_protocol.external.MsgType.ACCOUNT_RECORD:
                 logging.info(f"Processing Account Record")

@@ -3,6 +3,7 @@ import logging
 import signal
 import requests
 import json
+from datetime import datetime
 from common import middleware, message_protocol
 
 ID = int(os.environ["ID"])
@@ -32,6 +33,8 @@ ISO_TO_DATASET_NAME = {
     "CNY": "Yuan",
 }
 STATE_FILE = "/output/conversion_rates.json"
+US_DOLLAR = "US Dollar"
+
 
 class USDConverter:
     def __init__(self):
@@ -43,13 +46,13 @@ class USDConverter:
         )
         self.conversion_rates = {}
         self._fetch_conversion_rates()
-        
+
     def _save_conversion_rates(self):
         try:
             with open(STATE_FILE, "w") as f:
                 json.dump(self.conversion_rates, f)
         except IOError as e:
-            logging.error(f"Error saving conversion rates: {e}")
+            logging.exception(f"Error saving conversion rates: {e}")
 
     def _fetch_conversion_rates(self):
         if os.path.exists(STATE_FILE):
@@ -64,11 +67,9 @@ class USDConverter:
             response = requests.get(CURRENCIES_API_URL)
             response.raise_for_status()
             data = response.json()
-            currencies = {
-                currency["iso_code"]: currency["name"] for currency in data
-            }
+            currencies = {currency["iso_code"]: currency["name"] for currency in data}
             currencies.update(ISO_TO_DATASET_NAME)
-            
+
             response = requests.get(CONVERSION_API_URL)
             response.raise_for_status()
             data = response.json()
@@ -80,13 +81,13 @@ class USDConverter:
                 self.conversion_rates[date]["Bitcoin"] = rate
         except requests.RequestException as e:
             logging.exception(f"Error fetching conversion rates: {e}, retrying later.")
-            
+
             self._save_conversion_rates()
-            
+
     def _convert_to_usd(self, amount, currency, date):
         if not self.conversion_rates:
             self._fetch_conversion_rates()
-        if currency == "US Dollar":
+        if currency == US_DOLLAR:
             return amount
         if date not in self.conversion_rates:
             logging.warning(f"No conversion rates found for date {date}.")
@@ -94,40 +95,46 @@ class USDConverter:
         day_rates = self.conversion_rates.get(date)
         rate = day_rates.get(currency)
         if not rate:
-            logging.warning(f"No conversion rate found for currency {currency} on date {date}.")
+            logging.warning(
+                f"No conversion rate found for currency {currency} on date {date}."
+            )
             return None
         return amount / rate
-    
+
     def _process_data(self, transaction):
         amount = transaction.get("amount_paid")
         currency = transaction.get("payment_currency")
-        date = transaction.get("timestamp")
-        logging.debug(f"Processing transaction: {transaction}")
+        date = datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M")
+        # logging.debug(f"Processing transaction: {transaction}")
         if amount is None or currency is None or date is None:
             logging.warning(f"Message missing required fields: {transaction}")
             return
-        
+
         converted_amount = self._convert_to_usd(amount, currency, date)
-        if converted_amount is not None:
+        logging.debug(f"Converted {amount} {currency} to {converted_amount} USD")
+        if converted_amount is not None and currency != US_DOLLAR:
             transaction["amount_paid"] = converted_amount
-            transaction["currency"] = "US Dollar"
-            logging.debug(f"Converted MESSAGE {transaction}")
-            
-        if transaction["payment_format"] == "Wire" and transaction["amount_paid"] < 1:
+            transaction["payment_currency"] = US_DOLLAR
+
+        if (
+            transaction["payment_format"] == "Wire"
+            or transaction["payment_format"] == "ACH"
+        ) and transaction["amount_paid"] < 1:
             transaction["nodo_id"] = ID
             self.output_queue.send(message_protocol.internal.serialize(transaction))
-    
+
     def _process_eof(self, deserialized_message):
         # Just forward the EOF message
-        self.output_queue.send(message_protocol.internal.serialize(deserialized_message))
-    
+        self.output_queue.send(
+            message_protocol.internal.serialize(deserialized_message)
+        )
+
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
         logging.debug(f"MESSAGE {deserialized_message}")
-        logging.debug(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)
-        else:    
+        else:
             self._process_data(deserialized_message)
         ack()
 
