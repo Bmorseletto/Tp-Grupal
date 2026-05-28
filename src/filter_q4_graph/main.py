@@ -76,7 +76,7 @@ class GraphFilter:
         self._print_results(client_id)
         self.output_exchange.send_by_key(
             message_protocol.internal.serialize(
-                {"nodo_id": ID, "client_id": client_id, "q4_graph_eof": True}
+                {"nodo_id": ID, "client_id": client_id}
             ),
             OUTPUT_PREFIX,
         )
@@ -98,6 +98,7 @@ class GraphFilter:
 
     def _send_result(self, result, bank, account):
         routing_key = self._get_output_routing_key(bank, account)
+        logging.info(f"Sending to routing key: {routing_key} | results: {result}")
         self.output_exchange.send_by_key(
             message_protocol.internal.serialize(result), routing_key
         )
