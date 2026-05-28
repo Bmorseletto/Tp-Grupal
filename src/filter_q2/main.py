@@ -46,9 +46,10 @@ class MaxTransactionFilter:
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         if self.eof_count[client_id] < UPSTREAM_AMOUNT:
             return
-        results = list(self.max_transaction_per_bank[deserialized_message[CLIENT_ID_KEY]].values())
-        logging.info(f"Sending max values {results}, to {OUTPUT_QUEUE}")
-        self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, CLIENT_ID_KEY:deserialized_message[CLIENT_ID_KEY], "results": results} ))
+        results = list(self.max_transaction_per_bank.get(client_id, {}).values())
+        if results:
+            logging.info(f"Sending max values {results}, to {OUTPUT_QUEUE}")
+            self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, CLIENT_ID_KEY: client_id, "results": results} ))
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
