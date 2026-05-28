@@ -66,6 +66,7 @@ class JoinFilterQ3:
                             }
                             results.append(values)
                     os.remove(RESULTS_STORAGE+f"{client_id}.csv")
+                results = sorted(results, key=lambda x: x['payment_format'])
                 self.output_queue.send(message_protocol.internal.serialize([client_id,"q3",results]))
                 if os.path.isfile(AVG_STORAGE+f"{client_id}.csv"):
                     os.remove(AVG_STORAGE+f"{client_id}.csv")

@@ -66,7 +66,6 @@ class AvgFilter:
             if "avg" in deserialized_message.keys():
                 self.avg_worker_finished_with_client[client_id].add(nodo_id)
             else:
-                logging.info("new date fliter node entry")
                 self.date_filter_finished_with_client[client_id].add(nodo_id)
             if len(self.date_filter_finished_with_client[client_id]) < DATE_FILTER_AMOUNT or len(self.avg_worker_finished_with_client[client_id]) < AVG_CALC_AMOUNT:
                 logging.info("WAITING FOR PREVIOUS WORKERS TO FINISH")

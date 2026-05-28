@@ -17,6 +17,7 @@ DONE = True
 WORKING = False
 NODO_TYPE = 1
 AVG_STORAGE = "/output/q3_avg_"
+UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 
 class AvgCalculator:
 
@@ -34,6 +35,7 @@ class AvgCalculator:
                 ],
         )
         self.transactions_per_payment_format = {}
+        self.eof_count = {}
 
     def _process_data(self, transaction):
         try:
@@ -45,7 +47,6 @@ class AvgCalculator:
             if payment_format not in self.transactions_per_payment_format[client_id].keys():
                 self.transactions_per_payment_format[client_id][payment_format] = {"transactions":0,"total amount paid":0}
             payment_format_current_data=self.transactions_per_payment_format[client_id][payment_format]
-            logging.info(f"dic: {payment_format_current_data}")
             payment_format_current_data["transactions"] +=1
             payment_format_current_data["total amount paid"] += transaction["amount_paid"]
             logging.info(f"dic: {self.transactions_per_payment_format[client_id]}")
@@ -54,6 +55,9 @@ class AvgCalculator:
 
     def _process_eof(self, deserialized_message):
         client_id = deserialized_message["client_id"]
+        self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
+        if self.eof_count[client_id] < UPSTREAM_AMOUNT:
+            return
         logging.info(f"transactions per payment: {self.transactions_per_payment_format}")
         if client_id in self.transactions_per_payment_format.keys():
             for payment_format, data in self.transactions_per_payment_format[client_id].items():
@@ -71,6 +75,7 @@ class AvgCalculator:
                     finally:
                         fcntl.flock(csvfile, fcntl.LOCK_UN)
                 logging.info(f"writing {average} down")
+            self.transactions_per_payment_format.pop(client_id)
         logging.info(f"SENDING EOF")
         self.output_exchange.send_by_key(message_protocol.internal.serialize({"nodo_id":ID, "client_id":client_id, "avg": True}), OUTPUT_PREFIX)
 
@@ -78,6 +83,7 @@ class AvgCalculator:
         deserialized_message = message_protocol.internal.deserialize(message)
         logging.info(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:
+            logging.info(f"EOF {deserialized_message}")
             self._process_eof(deserialized_message)
         else:    
             self._process_data(deserialized_message)
