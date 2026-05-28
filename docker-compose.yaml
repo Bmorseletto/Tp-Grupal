@@ -192,8 +192,8 @@ services:
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
       - OUTPUTS_PREFIX=AvgCalc,Q4Graph
-      - OUTPUTS_AMOUNTS=1,1
-      - ROUTING_HASH_TARGET=payment_format,payment_format
+      - OUTPUTS_AMOUNTS=1,2
+      - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
@@ -207,9 +207,28 @@ services:
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
-      - FILTER_AMOUNT=1
+      - FILTER_AMOUNT=2
       - FILTER_PREFIX=Q4Graph
-      - OUTPUT_PREFIX=Q4GraphOut
+      - OUTPUT_PREFIX=Q4Filter
+      - OUTPUT_AMOUNT=1
+      - FILTER_DATE_AMOUNT=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+
+  query_4_graph_1:
+    build:
+      context: ./src/
+      dockerfile: filter_q4_graph/Dockerfile
+    container_name: query_4_graph_1
+    depends_on:
+      - gateway
+    environment:
+      - ID=1
+      - MOM_HOST=rabbitmq
+      - FILTER_AMOUNT=2
+      - FILTER_PREFIX=Q4Graph
+      - OUTPUT_PREFIX=Q4Filter
       - OUTPUT_AMOUNT=1
       - FILTER_DATE_AMOUNT=1
       - PYTHONUNBUFFERED=1

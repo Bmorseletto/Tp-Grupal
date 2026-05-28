@@ -1,6 +1,7 @@
 import os
 import logging
 import signal
+import zlib
 from collections import defaultdict
 
 from common import middleware, message_protocol
@@ -8,6 +9,8 @@ from common import middleware, message_protocol
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
 FILTER_PREFIX = os.environ["FILTER_PREFIX"]
+OUTPUT_PREFIX = os.environ["OUTPUT_PREFIX"]
+OUTPUT_AMOUNT = int(os.environ["OUTPUT_AMOUNT"])
 FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
 FILTER_DATE_AMOUNT = int(os.environ["FILTER_DATE_AMOUNT"])
 
@@ -18,6 +21,11 @@ class GraphFilter:
             MOM_HOST,
             FILTER_PREFIX,
             [f"{FILTER_PREFIX}", FILTER_PREFIX + f"{ID}"]
+        )
+        self.output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
+            MOM_HOST,
+            OUTPUT_PREFIX,
+            [OUTPUT_PREFIX] + [OUTPUT_PREFIX + str(j) for j in range(OUTPUT_AMOUNT)],
         )
         self.eof_count = {}
         self.origin_groups = {}
@@ -66,6 +74,12 @@ class GraphFilter:
             return
 
         self._print_results(client_id)
+        self.output_exchange.send_by_key(
+            message_protocol.internal.serialize(
+                {"nodo_id": ID, "client_id": client_id, "q4_graph_eof": True}
+            ),
+            OUTPUT_PREFIX,
+        )
         self.origin_groups.pop(client_id, None)
         self.eof_count.pop(client_id, None)
 
@@ -77,6 +91,16 @@ class GraphFilter:
         return {
             self._format_node(node): count for node, count in edges.items()
         }
+
+    def _get_output_routing_key(self, bank, account):
+        origin_hash = zlib.crc32(f"{bank}:{account}".encode("utf-8"))
+        return OUTPUT_PREFIX + str(origin_hash % OUTPUT_AMOUNT)
+
+    def _send_result(self, result, bank, account):
+        routing_key = self._get_output_routing_key(bank, account)
+        self.output_exchange.send_by_key(
+            message_protocol.internal.serialize(result), routing_key
+        )
 
     def _get_second_level_destinations(self, client_id, origin_key):
         direct_destinations = self.origin_groups[client_id][origin_key]["destinations"]
@@ -107,10 +131,19 @@ class GraphFilter:
             second_level_destinations = self._get_second_level_destinations(client_id, origin)
             if not second_level_destinations:
                 continue
+            formatted_edges = self._format_edges(second_level_destinations)
+            result = {
+                "client_id": client_id,
+                "origin_bank": origin[0],
+                "origin_account": origin[1],
+                "transactions": data["transactions"],
+                "total_amount": data["total_amount"],
+                "destinations": formatted_edges,
+            }
             print(
-                f"  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={self._format_edges(second_level_destinations)}"
+                f"  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={formatted_edges}"
             )
-
+            self._send_result(result, origin[0], origin[1])
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
@@ -124,12 +157,14 @@ class GraphFilter:
     def start(self):
         self.input_exchange.start_consuming(self.process_messsage)
         self.input_exchange.close()
+        self.output_exchange.close()
 
     def stop(self):
         self.input_exchange.stop_consuming()
 
     def close(self):
         self.input_exchange.close()
+        self.output_exchange.close()
 
 
 def main():

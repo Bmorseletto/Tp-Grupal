@@ -18,6 +18,50 @@ END_DATE =  os.environ["END_DATE"]
 DONE = True
 WORKING = False
 
+class GraphRouter:
+    def __init__(self, num_nodes):
+        self.parent = {} # El padre sería la cuenta que inicia el scatter gather
+        self.num_nodes = num_nodes
+        self.component_id = {} # ID de grupo de banco-cuentas
+        self.next_id = 0
+
+    def find(self, x):
+        if self.parent.get(x, x) != x:
+            self.parent[x] = self.find(self.parent[x])
+        return self.parent.get(x, x)
+
+    def union(self, a, b):
+        # se unen las cuentas conectadas.
+        # Ej.: A->B y B->C, por ende A, B y C son del mismo grupo => van a la misma routing key
+        pa, pb = self.find(a), self.find(b)
+        if pa != pb:
+            # unimos pb en pa
+            self.parent[pb] = pa
+            # propagación comp_id
+            if pb in self.component_id:
+                self.component_id[pa] = self.component_id[pb]
+            elif pa in self.component_id:
+                self.component_id[pb] = self.component_id[pa]
+
+    def get_node(self, to_bank, to_account, from_bank, from_account):
+        to = f"{to_bank}:{to_account}"
+        fr = f"{from_bank}:{from_account}"
+        self.union(to, fr)
+        rep = self.find(to)
+
+        # asignar id al componente (si es que no existia de antes)
+        if rep not in self.component_id:
+            self.component_id[rep] = self.next_id
+            self.next_id += 1
+
+        comp_id = self.component_id[rep]
+        routing_key = "Q4Graph" + str(comp_id % self.num_nodes)
+        logging.info(
+            f"GRAPH GET NODE: {to_bank}, {to_account}, {from_bank}, {from_account} "
+            f"| rep={rep} | comp_id={comp_id} | routing key={routing_key}"
+        )
+        return routing_key
+
 class DateFilter:
 
     def __init__(self):
@@ -41,6 +85,10 @@ class DateFilter:
             for i in range(len(self.outputs_prefix))
         ]
 
+        self.graph_router = GraphRouter(self.outputs_amounts[1])
+        logging.info(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
+        logging.info(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
+
     def _process_data(self, transaction):
         
         transaction_timestamp=datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M")
@@ -50,17 +98,39 @@ class DateFilter:
         logging.info(f"date comp: {initial_date <= transaction_timestamp <= end_date}")
 
         if initial_date <= transaction_timestamp <= end_date:
-            for i in range(len(self.output_exchanges)):
-                routing_key = (
-                self.outputs_prefix[i]
-                + str(
-                    zlib.crc32(transaction[self.routing_hash_targets[i]].encode("utf-8"))
-                    % self.outputs_amounts[i]
-                    )
-                )
-                self.output_exchanges[i].send_by_key(
-                message_protocol.internal.serialize(transaction), routing_key
-                )
+            # for i in range(len(self.output_exchanges)):
+            #     routing_key = (
+            #     self.outputs_prefix[i]
+            #     + str(
+            #         zlib.crc32(transaction[self.routing_hash_targets[i]].encode("utf-8"))
+            #         % self.outputs_amounts[i]
+            #         )
+            #     )
+            #     logging.info(f"SENDING transaction {transaction}")
+            #     self.output_exchanges[i].send_by_key(
+            #     message_protocol.internal.serialize(transaction), routing_key
+            #     )
+
+            # QUERY 3
+            composite_key_avg = transaction.get("payment_format", "")
+            routing_key_avg = "AvgCalc" + str(
+                zlib.crc32(composite_key_avg.encode("utf-8")) % self.outputs_amounts[0]
+            )
+            logging.info(f"SENDING AvgCalc transaction {transaction} -> {routing_key_avg}")
+            self.output_exchanges[0].send_by_key(
+                message_protocol.internal.serialize(transaction), routing_key_avg
+            )
+
+            # QUERY 4
+            routing_key_q4 = self.graph_router.get_node(
+                transaction.get("to_bank", ""),
+                transaction.get("to_account", ""),
+                transaction.get("from_bank", ""),
+                transaction.get("account", "")
+            )
+            self.output_exchanges[1].send_by_key(
+                message_protocol.internal.serialize(transaction), routing_key_q4
+            )
            
         
 
