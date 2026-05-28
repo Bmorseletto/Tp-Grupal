@@ -45,15 +45,6 @@ class AvgFilter:
             csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
             csv_writer.writerow(data.values())
             logging.info(f"writing {data} down")
-    
-    #def _process_average(self, data):
-    #    logging.info(f"average data {data}")
-    #    client_id= data.pop("client_id")
-    #    logging.info(f"processing data OF {client_id}")
-    #    with open(AVG_STORAGE+f"{client_id}_{ID}.csv", "a") as csvfile:
-    #        csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-    #        csv_writer.writerow(data.values())
-    #        logging.info(f"writing {data} down")
 
     def _process_eof(self, deserialized_message):
         try:
