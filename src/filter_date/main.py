@@ -81,9 +81,9 @@ class DateFilter:
                     )
                     logging.info(f"SENDING transaction {transaction}")
                     logging.debug(f"Routing transaction {transaction} to output exchange with routing key {routing_key}")
-                self.output_exchanges[i].send_by_key(
-                    message_protocol.internal.serialize(transaction), routing_key
-                    )
+                    self.output_exchanges[i].send_by_key(
+                        message_protocol.internal.serialize(transaction), routing_key
+                        )
            
            
     def _process_eof(self, deserialized_message):
