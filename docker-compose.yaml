@@ -372,7 +372,7 @@ services:
       - OUTPUTS_PREFIX=AvgCalc,USDConverter
       - OUTPUTS_AMOUNTS=2,1     # Envía a 2 AvgCalcs
       - UPSTREAM_AMOUNT=2
-      - ROUTING_HASH_TARGET=payment_format
+      - ROUTING_HASH_TARGET=payment_format,payment_format
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
@@ -393,7 +393,7 @@ services:
       - OUTPUTS_PREFIX=AvgCalc,USDConverter
       - OUTPUTS_AMOUNTS=2,1
       - UPSTREAM_AMOUNT=2
-      - ROUTING_HASH_TARGET=payment_format
+      - ROUTING_HASH_TARGET=payment_format,payment_format
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
@@ -439,7 +439,7 @@ services:
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
-      - OUTPUT_QUEUE=Join_Q5_Results
+      - OUTPUT_QUEUE=Query5_Aggregator
       - FILTER_PREFIX=USDConverter
       - FILTER_AMOUNT=1
       - PYTHONUNBUFFERED=1
@@ -475,7 +475,7 @@ services:
       - MOM_HOST=rabbitmq
       - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q5_Results
       - OUTPUT_QUEUE=join_results_queue
-      - QUERY_AMOUNT=3
+      - QUERY_AMOUNT=4
       # - JOIN_STATE_DIR=/join_state
       - PYTHONUNBUFFERED=1
     volumes:

@@ -74,13 +74,18 @@ class USDConverter:
             data = response.json()
             for rate in data:
                 day_rate = self.conversion_rates.setdefault(rate["date"], {})
-                day_rate[currencies[rate["quote"]]] = rate["rate"]
+                if rate["quote"] in currencies:
+                    day_rate[currencies[rate["quote"]]] = rate["rate"]
             for date, rate in BITCOIN_CONVERSION_RATES.items():
                 self.conversion_rates[date]["Bitcoin"] = rate
         except requests.RequestException as e:
-            logging.exception(f"Error fetching conversion rates: {e}")
+            logging.exception(f"Error fetching conversion rates: {e}, retrying later.")
+            
+            self._save_conversion_rates()
             
     def _convert_to_usd(self, amount, currency, date):
+        if not self.conversion_rates:
+            self._fetch_conversion_rates()
         if currency == "US Dollar":
             return amount
         if date not in self.conversion_rates:
@@ -88,15 +93,16 @@ class USDConverter:
             return None
         day_rates = self.conversion_rates.get(date)
         rate = day_rates.get(currency)
-        # if not rate:
-        #     logging.warning(f"No conversion rate found for currency {currency} on date {date}.")
-        #     return None
+        if not rate:
+            logging.warning(f"No conversion rate found for currency {currency} on date {date}.")
+            return None
         return amount / rate
     
     def _process_data(self, transaction):
         amount = transaction.get("amount_paid")
-        currency = transaction.get("currency")
+        currency = transaction.get("payment_currency")
         date = transaction.get("timestamp")
+        logging.debug(f"Processing transaction: {transaction}")
         if amount is None or currency is None or date is None:
             logging.warning(f"Message missing required fields: {transaction}")
             return
@@ -108,6 +114,7 @@ class USDConverter:
             logging.debug(f"Converted MESSAGE {transaction}")
             
         if transaction["payment_format"] == "Wire" and transaction["amount_paid"] < 1:
+            transaction["nodo_id"] = ID
             self.output_queue.send(message_protocol.internal.serialize(transaction))
     
     def _process_eof(self, deserialized_message):
@@ -138,7 +145,7 @@ class USDConverter:
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
     usd_converter_filter = USDConverter()
     signal.signal(
         signal.SIGTERM,
