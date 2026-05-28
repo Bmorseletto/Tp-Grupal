@@ -77,6 +77,10 @@ services:
     container_name: currency_filter_0
     depends_on:
       - dollar_amount_filter_0
+      - max_transaction_filter_0
+      - date_filter_0
+      - date_filter_1
+      - query_3_date_filter_0
       - dollar_amount_filter_1
       - dollar_amount_filter_2
     environment:
@@ -356,7 +360,8 @@ services:
     container_name: date_filter_0
     depends_on:
       - query_3_avg_calc_0
-      - query_3_avg_calc_1
+      - query_4_graph_0
+      - query_4_graph_1
     environment:
       - ID=0
       - MOM_HOST=rabbitmq

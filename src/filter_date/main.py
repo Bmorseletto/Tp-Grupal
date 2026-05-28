@@ -6,6 +6,7 @@ import signal
 import zlib
 
 from common import middleware, message_protocol
+from graph_router import GraphRouterCSV
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -14,54 +15,10 @@ OUTPUTS_PREFIX = os.environ["OUTPUTS_PREFIX"] # FORMATO: prefix1,prefix2,prefix 
 OUTPUTS_AMOUNTS = os.environ["OUTPUTS_AMOUNTS"]  # FORMATO: 1,2,3 (usamos split de python para hacer la lista de amounts)
 ROUTING_HASH_TARGET = os.environ["ROUTING_HASH_TARGET"] # columna del csv de input data que se usa para routear el input EJ: from_bank,to_account,
 INITIAL_DATE = os.environ["INITIAL_DATE"]
+UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 END_DATE =  os.environ["END_DATE"]
 DONE = True
 WORKING = False
-UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
-
-class GraphRouter:
-    def __init__(self, num_nodes):
-        self.parent = {} # El padre sería la cuenta que inicia el scatter gather
-        self.num_nodes = num_nodes
-        self.component_id = {} # ID de grupo de banco-cuentas
-        self.next_id = 0
-
-    def find(self, x):
-        if self.parent.get(x, x) != x:
-            self.parent[x] = self.find(self.parent[x])
-        return self.parent.get(x, x)
-
-    def union(self, a, b):
-        # se unen las cuentas conectadas.
-        # Ej.: A->B y B->C, por ende A, B y C son del mismo grupo => van a la misma routing key
-        pa, pb = self.find(a), self.find(b)
-        if pa != pb:
-            # unimos pb en pa
-            self.parent[pb] = pa
-            # propagación comp_id
-            if pb in self.component_id:
-                self.component_id[pa] = self.component_id[pb]
-            elif pa in self.component_id:
-                self.component_id[pb] = self.component_id[pa]
-
-    def get_node(self, to_bank, to_account, from_bank, from_account):
-        to = f"{to_bank}:{to_account}"
-        fr = f"{from_bank}:{from_account}"
-        self.union(to, fr)
-        rep = self.find(to)
-
-        # asignar id al componente (si es que no existia de antes)
-        if rep not in self.component_id:
-            self.component_id[rep] = self.next_id
-            self.next_id += 1
-
-        comp_id = self.component_id[rep]
-        routing_key = "Q4Graph" + str(comp_id % self.num_nodes)
-        logging.info(
-            f"GRAPH GET NODE: {to_bank}, {to_account}, {from_bank}, {from_account} "
-            f"| rep={rep} | comp_id={comp_id} | routing key={routing_key}"
-        )
-        return routing_key
 
 class DateFilter:
 
@@ -85,6 +42,7 @@ class DateFilter:
             )
             for i in range(len(self.outputs_prefix))
         ]
+
         self.eof_count = {}
         logging.info(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
         logging.info(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
@@ -102,7 +60,7 @@ class DateFilter:
             for i in range(len(self.output_exchanges)):
                 logging.info(f"ROUTING_HASH_TARGET I: {self.routing_hash_targets[i]}")
                 if '+' in self.routing_hash_targets[i]:
-                    self.graph_router = GraphRouter(self.outputs_amounts[i])
+                    self.graph_router = GraphRouterCSV(self.outputs_amounts[i])
                      # QUERY 4
                     routing_key_q4 = self.graph_router.get_node(
                         transaction.get("to_bank", ""),
