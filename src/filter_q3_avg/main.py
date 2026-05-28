@@ -85,15 +85,13 @@ class AvgCalculator:
 
     def start(self):
         self.input_exchange.start_consuming(self.process_messsage)
-        self.input_exchange.close()
-        self.output_queue.close()
 
     
     def stop(self):
         self.input_exchange.stop_consuming()
     def close(self):
         self.input_exchange.close()
-        self.output_queue.close()
+        self.output_exchange.close()
        
 
 def main():

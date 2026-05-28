@@ -84,28 +84,26 @@ class DateFilter:
 
     def start(self):
         self.input_exchange.start_consuming(self.process_messsage)
-        self.input_exchange.close()
-        for exchange in self.output_exchanges:
-            exchange.close()
 
     
     def stop(self):
+        logging.info(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
         self.input_exchange.stop_consuming()
     def close(self):
         self.input_exchange.close()
-        for exchange in self.output_exchanges():
+        for exchange in self.output_exchanges:
             exchange.close()
        
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    dollar_amt_filter = DateFilter()
+    date_filter = DateFilter()
     signal.signal(
         signal.SIGTERM,
-        lambda signum, frame: dollar_amt_filter.stop(),
+        lambda signum, frame: date_filter.stop(),
     )
-    dollar_amt_filter.start()
-    dollar_amt_filter.close()
+    date_filter.start()
+    date_filter.close()
     return 0
 
 
