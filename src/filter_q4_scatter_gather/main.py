@@ -92,8 +92,17 @@ class ScatterGatherDetector:
         self.input_exchange.stop_consuming()
 
     def close(self):
-        self.input_exchange.close()
-        self.output_queue.close()
+        try:
+            if self.input_exchange:
+                self.input_exchange.close()
+        except Exception as e:
+            logging.warning(f"Input exchange ya estaba cerrado: {e}")
+
+        try:
+            if self.output_queue:
+                self.output_queue.close()
+        except Exception as e:
+            logging.warning(f"Output queue ya estaba cerrada: {e}")
 
 def main():
     logging.basicConfig(level=logging.INFO)
