@@ -53,8 +53,8 @@ class DateFilter:
         transaction_timestamp=datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M")
         initial_date = datetime.strptime(INITIAL_DATE, "%Y/%m/%d")
         end_date = datetime.strptime(END_DATE, "%Y/%m/%d")
-        logging.info(f"transaction_timestamp {transaction_timestamp}, initial_date {initial_date}, end_date {end_date} ")
-        logging.info(f"date comp: {initial_date <= transaction_timestamp <= end_date}")
+        logging.debug(f"transaction_timestamp {transaction_timestamp}, initial_date {initial_date}, end_date {end_date} ")
+        logging.debug(f"date comp: {initial_date <= transaction_timestamp <= end_date}")
 
         if initial_date <= transaction_timestamp <= end_date:
             for i in range(len(self.output_exchanges)):
@@ -80,7 +80,8 @@ class DateFilter:
                         )
                     )
                     logging.info(f"SENDING transaction {transaction}")
-                    self.output_exchanges[i].send_by_key(
+                    logging.debug(f"Routing transaction {transaction} to output exchange with routing key {routing_key}")
+                self.output_exchanges[i].send_by_key(
                     message_protocol.internal.serialize(transaction), routing_key
                     )
            
@@ -100,7 +101,7 @@ class DateFilter:
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {deserialized_message}")
+        logging.debug(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)
         else:    

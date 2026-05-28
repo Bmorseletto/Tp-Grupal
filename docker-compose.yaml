@@ -519,7 +519,7 @@ services:
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
-      - OUTPUT_QUEUE=Join_Q5_Results
+      - OUTPUT_QUEUE=Query5_Aggregator
       - FILTER_PREFIX=USDConverter
       - FILTER_AMOUNT=1
       - PYTHONUNBUFFERED=1
