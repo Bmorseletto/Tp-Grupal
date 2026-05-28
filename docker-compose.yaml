@@ -95,7 +95,7 @@ services:
       # - FILTER_Q4_PREFIX=DateFilterQ4
       # - FILTER_Q5_AMOUNT=1
       # - FILTER_Q5_PREFIX=DateFilter
-      - FILTER_DATE_AMOUNT=1
+      - FILTER_DATE_AMOUNT=2
       - FILTER_DATE_PREFIX=DateFilter
       - PYTHONUNBUFFERED=1
   currency_filter_1:
@@ -123,7 +123,7 @@ services:
       # - FILTER_Q4_PREFIX=DateFilterQ4
       # - FILTER_Q5_AMOUNT=1
       # - FILTER_Q5_PREFIX=DateFilter
-      - FILTER_DATE_AMOUNT=1
+      - FILTER_DATE_AMOUNT=2
       - FILTER_DATE_PREFIX=DateFilter
       - PYTHONUNBUFFERED=1
   dollar_amount_filter_0:
@@ -362,9 +362,9 @@ services:
       dockerfile: filter_date/Dockerfile
     container_name: date_filter_0
     depends_on:
-      # - query_3_avg_calc_0
-      - usd_converter_0
+      - query_3_avg_calc_0
       - query_3_avg_calc_1
+      - usd_converter_0
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
@@ -385,6 +385,7 @@ services:
     depends_on:
       - query_3_avg_calc_0
       - query_3_avg_calc_1
+      - usd_converter_0
     environment:
       - ID=1                    # Nuevo ID
       - MOM_HOST=rabbitmq
