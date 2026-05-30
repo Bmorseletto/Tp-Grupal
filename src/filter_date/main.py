@@ -58,7 +58,7 @@ class DateFilter:
 
         if initial_date <= transaction_timestamp <= end_date:
             for i in range(len(self.output_exchanges)):
-                logging.info(f"ROUTING_HASH_TARGET I: {self.routing_hash_targets[i]}")
+                logging.debug(f"ROUTING_HASH_TARGET I: {self.routing_hash_targets[i]}")
                 if '+' in self.routing_hash_targets[i]:
                     self.graph_router = GraphRouterCSV(self.outputs_amounts[i])
                      # QUERY 4
@@ -79,8 +79,8 @@ class DateFilter:
                         % self.outputs_amounts[i]
                         )
                     )
-                    logging.info(f"SENDING transaction {transaction}")
-                    logging.debug(f"Routing transaction {transaction} to output exchange with routing key {routing_key}")
+                    # logging.debug(f"SENDING transaction {transaction}")
+                    # logging.info(f"Routing transaction {transaction} to output exchange with routing key {routing_key}")
                     self.output_exchanges[i].send_by_key(
                         message_protocol.internal.serialize(transaction), routing_key
                         )
@@ -101,7 +101,7 @@ class DateFilter:
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {deserialized_message}")
+        logging.debug(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)
         else:    
@@ -113,7 +113,7 @@ class DateFilter:
 
     
     def stop(self):
-        logging.info(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
+        logging.debug(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
         self.input_exchange.stop_consuming()
     def close(self):
         self.input_exchange.close()
