@@ -20,43 +20,46 @@ class JoinFilterQ1:
         self.output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
             MOM_HOST, OUTPUT_QUEUE
         )
-        self.filtered_transactions = {}
+        self.results = {}
         self.worker_finished_with_client = {}
 
     def _process_data(self, transaction: dict):
-        logging.info(f"transaction {transaction}")
         client_id = transaction.pop("client_id")
-        if client_id not in self.worker_finished_with_client.keys():
-            logging.info(f"first time processing data of {client_id}")
-            self.worker_finished_with_client[client_id] = set()
-        logging.info(f"processing data OF {client_id}")
-        with open(f"/output/q1_{client_id}.csv", "a") as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-            csv_writer.writerow(transaction.values())
-            logging.info(f"writing {transaction} down")
+        self.worker_finished_with_client.setdefault(client_id, set())
+        # with open(f"/output/q1_{client_id}.csv", "a") as csvfile:
+        #     csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+        #     csv_writer.writerow(transaction.values())
+        #     logging.debug(f"writing {transaction} down")
+        if client_id not in self.results:
+            self.results[client_id] = []
+        self.results[client_id].append({
+            "account": transaction.get("account", ""),
+            "to_account": transaction.get("to_account", ""),
+            "amount_paid": transaction.get("amount_paid", ""),
+        })
 
     def _process_eof(self, eof_message):
         client_id = eof_message["client_id"]
         nodo_id = eof_message["nodo_id"]
-        logging.info(f"processing EOF of {client_id} from filter {nodo_id}")
         self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
         if len(self.worker_finished_with_client[client_id]) == Q1_FILTER_AMOUNT:
-            csv_path = f"/output/q1_{client_id}.csv"
-            if os.path.exists(csv_path):
-                with open(csv_path, "r", newline="") as csvfile:
-                    csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
-                    results = []
-                    for transaction in csv_reader:
-                        logging.info(f"sending transaction: {transaction}, to gateway")
-                        values = {
-                            "account": transaction[0],
-                            "to_account": transaction[1],
-                            "amount_paid": transaction[2],
-                        }
-                        results.append(values)
-                os.remove(csv_path)
-            else:
-                results = []
+            # csv_path = f"/output/q1_{client_id}.csv"
+            # if os.path.exists(csv_path):
+            #     with open(csv_path, "r", newline="") as csvfile:
+            #         csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
+            #         results = []
+            #         for transaction in csv_reader:
+            #             logging.info(f"sending transaction: {transaction}, to gateway")
+            #             values = {
+            #                 "account": transaction[0],
+            #                 "to_account": transaction[1],
+            #                 "amount_paid": transaction[2],
+            #             }
+            #             results.append(values)
+            #     os.remove(csv_path)
+            # else:
+            #     results = []
+            results = self.results.pop(client_id, [])
             self.output_queue.send(
                 message_protocol.internal.serialize([client_id, "q1", results])
             )
@@ -65,14 +68,17 @@ class JoinFilterQ1:
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
-        if len(deserialized_message) == 2:  # modificar
+        if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)
         else:
             self._process_data(deserialized_message)
         ack()
 
     def start(self):
-        self.input_queue.start_consuming(self.process_messsage)
+        try:
+            self.input_queue.start_consuming(self.process_messsage)
+        except Exception as e:
+            logging.exception(f"Error consuming messages: {e}")
 
     def stop(self):
         self.input_queue.stop_consuming()
@@ -94,7 +100,7 @@ def main():
         join_filter.close()
         return 0
     except Exception:
-        logging.exception(f"An error occurred while running the {Q1_FILTER_PREFIX} filter")
+        logging.exception(f"An error occurred while running the {Q1_FILTER_AMOUNT} filter")
 
 
 if __name__ == "__main__":

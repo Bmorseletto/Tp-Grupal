@@ -37,7 +37,7 @@ class MaxTransactionFilter:
         if bank_id in self.max_transaction_per_bank[client_id].keys():
             if self.max_transaction_per_bank[client_id][bank_id][AMMOUNT_PAID_KEY] >= transaction[AMMOUNT_PAID_KEY]:
                 return
-        logging.debug(f"TRANSDACTION {transaction}")
+        # logging.debug(f"TRANSDACTION {transaction}")
         self.max_transaction_per_bank[client_id][bank_id] = transaction
     
 
@@ -48,7 +48,7 @@ class MaxTransactionFilter:
             return
         results = list(self.max_transaction_per_bank.get(client_id, {}).values())
         if results:
-            logging.info(f"Sending max values {results}, to {OUTPUT_QUEUE}")
+            logging.debug(f"Sending max values {results}, to {OUTPUT_QUEUE}")
             self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, CLIENT_ID_KEY: client_id, "results": results} ))
 
     def process_messsage(self, message, ack, nack):
@@ -61,11 +61,13 @@ class MaxTransactionFilter:
         ack()
 
     def start(self):
-        self.input_exchange.start_consuming(self.process_messsage)
-        self.input_exchange.close()
-        self.output_queue.close()
-
-    
+        try:
+            self.input_exchange.start_consuming(self.process_messsage)
+            self.input_exchange.close()
+            self.output_queue.close()
+        except Exception as e:
+            logging.exception(f"Error consuming messages: {e}")  
+  
     def stop(self):
         self.input_exchange.stop_consuming()
     def close(self):
@@ -74,7 +76,7 @@ class MaxTransactionFilter:
        
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
     dollar_amt_filter = MaxTransactionFilter()
     signal.signal(
         signal.SIGTERM,

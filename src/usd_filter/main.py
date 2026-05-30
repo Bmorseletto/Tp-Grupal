@@ -15,11 +15,11 @@ FILTER_PREFIX = os.environ["FILTER_PREFIX"]
 # FILTER_Q1_PREFIX = os.environ["FILTER_Q1_PREFIX"]
 # FILTER_Q2_AMOUNT = int(os.environ["FILTER_Q2_AMOUNT"])
 # FILTER_Q2_PREFIX = os.environ["FILTER_Q2_PREFIX"]
-FILTER_DATE_AMOUNT = int(os.environ["FILTER_DATE_AMOUNT"])
-FILTER_DATE_PREFIX = os.environ["FILTER_DATE_PREFIX"]
+# FILTER_DATE_AMOUNT = int(os.environ["FILTER_DATE_AMOUNT"])
+# FILTER_DATE_PREFIX = os.environ["FILTER_DATE_PREFIX"]
 DONE = True
 WORKING = False
-TOTAL_QUERIES = 3
+TOTAL_QUERIES = 2
 
 
 class CurrencyFilter:
@@ -45,15 +45,15 @@ class CurrencyFilter:
             )
             for i in range(TOTAL_QUERIES)
         ]
-        self.date_filter_exchange =  middleware.MessageMiddlewareExchangeRabbitMQ(
-                MOM_HOST,
-                FILTER_DATE_PREFIX,
-                [FILTER_DATE_PREFIX]
-                + [
-                    FILTER_DATE_PREFIX + str(j)
-                    for j in range(FILTER_DATE_AMOUNT)
-                ],
-            )
+        # self.date_filter_exchange =  middleware.MessageMiddlewareExchangeRabbitMQ(
+        #         MOM_HOST,
+        #         FILTER_DATE_PREFIX,
+        #         [FILTER_DATE_PREFIX]
+        #         + [
+        #             FILTER_DATE_PREFIX + str(j)
+        #             for j in range(FILTER_DATE_AMOUNT)
+        #         ],
+        #     )
 
     def _process_data(
         self, transaction
@@ -61,7 +61,7 @@ class CurrencyFilter:
         for i in range(TOTAL_QUERIES):
             send_to_query_i = getattr(self, f"_send_to_query_{i+1}")
             send_to_query_i(transaction)
-        self._send_to_date_filter(transaction)
+        # self._send_to_date_filter(transaction)
 
     def _send_to_query_1(self, transaction):
         if transaction["payment_currency"] == "US Dollar":
@@ -78,7 +78,7 @@ class CurrencyFilter:
                     % self.filter_q_amounts[0]
                 )
             )  # Usamos la account de origen y la cantidad de filtros Q1 para routear el mensaje
-            logging.info(f"routing key for Q1 {routing_key}")
+            logging.debug(f"routing key for Q1 {routing_key}")
             self.output_exchanges[0].send_by_key(
                 message_protocol.internal.serialize(output), str(routing_key)
             )
@@ -98,7 +98,7 @@ class CurrencyFilter:
                     % self.filter_q_amounts[1]
                 )
             )  # Usamos el banco y la cantidad de filtros Q2 para routear  las transacciones del mismo banco siempre al mismo nodo
-            logging.info(f"routing key for Q2 {routing_key}")
+            logging.debug(f"routing key for Q2 {routing_key}")
             self.output_exchanges[1].send_by_key(
                 message_protocol.internal.serialize(output), routing_key
             )
@@ -118,27 +118,27 @@ class CurrencyFilter:
                     % self.filter_q_amounts[2]
                 )
             )  # Usamos el banco y la cantidad de filtros Q2 para routear  las transacciones del mismo banco siempre al mismo nodo
-            logging.info(f"routing key for Q3 {routing_key}")
+            logging.debug(f"routing key for Q3 {routing_key}")
             self.output_exchanges[2].send_by_key(
                 message_protocol.internal.serialize(output), routing_key
             )
 
-    def _send_to_date_filter(self, transaction):
-        if transaction["payment_currency"] == "US Dollar":
-            routing_key = (
-                FILTER_DATE_PREFIX
-                + str(
-                    zlib.crc32(transaction["account"].encode("utf-8"))
-                    % FILTER_DATE_AMOUNT
-                )
-            ) 
-            logging.info(f"routing key for date {routing_key}")
-            self.date_filter_exchange.send_by_key(
-                message_protocol.internal.serialize(transaction), routing_key
-            )
+    # def _send_to_date_filter(self, transaction):
+    #     if transaction["payment_currency"] == "US Dollar":
+    #         routing_key = (
+    #             FILTER_DATE_PREFIX
+    #             + str(
+    #                 zlib.crc32(transaction["account"].encode("utf-8"))
+    #                 % FILTER_DATE_AMOUNT
+    #             )
+    #         ) 
+    #         logging.debug(f"routing key for date {routing_key}")
+    #         self.date_filter_exchange.send_by_key(
+    #             message_protocol.internal.serialize(transaction), routing_key
+    #         )
 
     def _process_eof(self, deserialized_message):
-        logging.info("sending eof to next node")
+        logging.debug("sending eof to next node")
         for i, output_exchange in enumerate(self.output_exchanges):
             output_exchange.send_by_key(
                 message_protocol.internal.serialize(
@@ -146,11 +146,11 @@ class CurrencyFilter:
                 ),
                 self.filter_q_prefixes[i],
             )
-        self.date_filter_exchange.send_by_key(
-                message_protocol.internal.serialize(
-                    {"nodo_id": ID, "client_id": deserialized_message[0]}
-                ),
-                FILTER_DATE_PREFIX,)
+        # self.date_filter_exchange.send_by_key(
+        #         message_protocol.internal.serialize(
+        #             {"nodo_id": ID, "client_id": deserialized_message[0]}
+        #         ),
+        #         FILTER_DATE_PREFIX,)
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
@@ -175,7 +175,7 @@ class CurrencyFilter:
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
     dollar_amt_filter = CurrencyFilter()
     signal.signal(
         signal.SIGTERM,

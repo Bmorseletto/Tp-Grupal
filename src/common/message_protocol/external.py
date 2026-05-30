@@ -119,7 +119,6 @@ def _recv_results(socket):
                     _recv_sized(socket, external_serializer.UINT32_SIZE)
                 )
                 element = external_serializer.deserialize_string(_recv_sized(socket, element_size))
-                logging.info(f"Client query element: {element}")
                 result.append(element)
             query_results.append(result)
         results[query_id] = query_results
@@ -236,7 +235,6 @@ def _send_results(socket, results):
         for result in query_results:
             msg += external_serializer.serialize_uint32(len(result))
             msg += _serialize_result_row(result)
-    logging.debug(f"MESSAGE {msg}")
     socket.sendall(msg)
 
 

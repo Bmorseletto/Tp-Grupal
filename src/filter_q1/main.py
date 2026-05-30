@@ -57,7 +57,10 @@ class DollarAmtFilter:
         ack()
 
     def start(self):
-        self.input_exchange.start_consuming(self.process_messsage)
+        try:
+            self.input_exchange.start_consuming(self.process_messsage)
+        except Exception as e:
+            logging.exception(f"Error consuming messages: {e}")
 
     def stop(self):
         logging.info(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
@@ -69,7 +72,7 @@ class DollarAmtFilter:
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
     dollar_amt_filter = DollarAmtFilter()
     signal.signal(
         signal.SIGTERM,

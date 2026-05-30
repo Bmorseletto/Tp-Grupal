@@ -59,7 +59,7 @@ class USDConverter:
             try:
                 with open(STATE_FILE, "r") as f:
                     self.conversion_rates = json.load(f)
-                logging.info("Loaded conversion rates from state file.")
+                logging.debug("Loaded conversion rates from state file.")
                 return
             except IOError as e:
                 logging.exception(f"Error loading conversion rates: {e}")
@@ -90,12 +90,12 @@ class USDConverter:
         if currency == US_DOLLAR:
             return amount
         if date not in self.conversion_rates:
-            logging.info(f"No conversion rates found for date {date}.")
+            logging.warning(f"No conversion rates found for date {date}.")
             return None
         day_rates = self.conversion_rates.get(date)
         rate = day_rates.get(currency)
         if not rate:
-            logging.info(
+            logging.warning(
                 f"No conversion rate found for currency {currency} on date {date}."
             )
             return None
@@ -107,7 +107,7 @@ class USDConverter:
         date = str(datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M").date())
         # logging.debug(f"Processing transaction: {transaction}")
         if amount is None or currency is None or date is None:
-            logging.info(f"Message missing required fields: {transaction}")
+            logging.warning(f"Message missing required fields: {transaction}")
             return
 
         converted_amount = self._convert_to_usd(amount, currency, date)
@@ -151,7 +151,7 @@ class USDConverter:
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
     usd_converter_filter = USDConverter()
     signal.signal(
         signal.SIGTERM,
