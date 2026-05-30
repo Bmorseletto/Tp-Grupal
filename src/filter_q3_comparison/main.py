@@ -57,7 +57,7 @@ class AvgFilter:
                     self.date_filter_finished_with_client[client_id] = set()
             if "avg" in deserialized_message.keys():
                 self.avg_worker_finished_with_client[client_id].add(nodo_id)
-                self.payment_formats_averages[client_id] = deserialized_message["avg"]
+                self.payment_formats_averages.setdefault(client_id, {}).update(deserialized_message["avg"])
             else:
                 self.date_filter_finished_with_client[client_id].add(nodo_id)
             if len(self.date_filter_finished_with_client[client_id]) < DATE_FILTER_AMOUNT or len(self.avg_worker_finished_with_client[client_id]) < AVG_CALC_AMOUNT:
