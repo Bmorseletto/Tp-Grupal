@@ -76,7 +76,7 @@ class MaxTransactionFilter:
        
 
 def main():
-    logging.basicConfig(level=logging.WARNING)
+    logging.basicConfig(level=logging.INFO)
     dollar_amt_filter = MaxTransactionFilter()
     signal.signal(
         signal.SIGTERM,

@@ -37,12 +37,14 @@ class JoinFilterQ2:
         #     csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
         #     for result in results:
         #         csv_writer.writerow(result.values())
+        logging.info(f"Received transaction results for client {client_id} from nodo {nodo_id}")
         self.results.setdefault(client_id, []).extend(results)
         if len(self.worker_finished_with_client[client_id]) == Q2_FILTER_AMOUNT and client_id in self.clients_accounts_eof:
             self._send_results(client_id)
 
     def _send_results(self, client_id):
         results = self._relate_bank_id_bank_name(client_id)
+        logging.info(f"Sending {len(results)} results to {OUTPUT_QUEUE}")
         self.output_queue.send(message_protocol.internal.serialize([client_id, "q2", results]))
         # csv_path = PATH_TRANSACTIONS + f"{client_id}.csv"
         # if os.path.exists(csv_path):
@@ -103,6 +105,7 @@ class JoinFilterQ2:
             self.input_queue.start_consuming()
         except Exception as e:
             logging.exception(f"Error consuming messages: {e}")
+            raise
 
     def stop(self):
         self.input_queue.stop_consuming()

@@ -72,7 +72,7 @@ class DollarAmtFilter:
 
 
 def main():
-    logging.basicConfig(level=logging.WARNING)
+    logging.basicConfig(level=logging.INFO)
     dollar_amt_filter = DollarAmtFilter()
     signal.signal(
         signal.SIGTERM,
