@@ -27,24 +27,23 @@ class JoinFilterQ3:
         self.results = {}
         self.worker_finished_with_client = {}
 
-    def _process_data(self, transactions):
+    def _process_data(self, transaction):
         try:
-            for transaction in transactions:
-                client_id = transaction.pop("client_id")
-                if len(transaction.values()) == 0:
-                    continue
-                # with open(RESULTS_STORAGE+f"{client_id}.csv", "a") as csvfile:
-                #     csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-                #     csv_writer.writerow(transaction.values())
-                #     logging.info(f"writing {transaction} down")
-                self.worker_finished_with_client.setdefault(client_id, set())
-                if client_id not in self.results:
-                    self.results[client_id] = []
-                self.results[client_id].append({
-                    "account": transaction.get("account", ""),
-                    "amount_paid": transaction.get("amount_paid", ""),
-                    "payment_format": transaction.get("payment_format", ""),
-                })
+            client_id = transaction.pop("client_id")
+            # with open(RESULTS_STORAGE+f"{client_id}.csv", "a") as csvfile:
+            #     csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+            #     csv_writer.writerow(transaction.values())
+            #     logging.info(f"writing {transaction} down")
+            self.worker_finished_with_client.setdefault(client_id, set())
+            if client_id not in self.results:
+                self.results[client_id] = []
+            self.output_queue.send(
+                message_protocol.internal.serialize([client_id, "q3", [{
+                "account": transaction.get("account", ""),
+                "amount_paid": transaction.get("amount_paid", ""),
+                "payment_format": transaction.get("payment_format", ""),
+            }]])
+            )
         except Exception as e:
             logging.error(f"ERROR: {e}")
 
@@ -68,7 +67,7 @@ class JoinFilterQ3:
                 #             results.append(values)
                 #     os.remove(RESULTS_STORAGE+f"{client_id}.csv")
                 results = sorted(self.results.pop(client_id, []), key=lambda x: x['payment_format'])
-                self.output_queue.send(message_protocol.internal.serialize([client_id, "q3", results]))
+                self.output_queue.send(message_protocol.internal.serialize([client_id, "q3"]))
                 del self.worker_finished_with_client[client_id]
                 avg_path = AVG_STORAGE + f"{client_id}.csv"
                 if os.path.isfile(avg_path):

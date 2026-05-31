@@ -142,6 +142,7 @@ def send_data(client):
     client.send_transaction_records(TRANSACTIONS_INPUT_FILE)
 
     account_thread.join()
+    logging.warning(f"Finished sending everything")
 
 def main() -> int:
     logging.basicConfig(level=logging.WARNING)

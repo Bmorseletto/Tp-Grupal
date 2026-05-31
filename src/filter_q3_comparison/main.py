@@ -51,7 +51,6 @@ class AvgFilter:
         try:
             client_id = deserialized_message["client_id"]
             nodo_id = deserialized_message["nodo_id"]
-            logging.info(f"EOF {deserialized_message}")
             if client_id not in self.avg_worker_finished_with_client.keys():
                     self.avg_worker_finished_with_client[client_id] = set()
                     self.date_filter_finished_with_client[client_id] = set()
@@ -72,23 +71,29 @@ class AvgFilter:
                 process.start()
             for process in processes:
                 result=results.get()
-                self.output_queue.send(message_protocol.internal.serialize({"results": result}))
-                process.join()
+                for transaction in result:
+                    self.output_queue.send(message_protocol.internal.serialize({"results": transaction}))
+                logging.info(f"some data sent")
             self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, "client_id":client_id}))
             if os.path.isfile(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv"):
                 os.remove(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv")
+            for process in processes:
+                process.join()
         except Exception as e:
-            logging.error(f"ERROR: {e}")
+            logging.info(f"ERROR: {e}")
 
 
     
     def process_messsage(self, message, ack, nack):
-        deserialized_message = message_protocol.internal.deserialize(message)
-        # logging.debug(f"MESSAGE {deserialized_message}")
-        if NODO_ID in deserialized_message.keys():
-            self._process_eof(deserialized_message)
-        else:    
-            self._process_data(deserialized_message)
+        try:
+            deserialized_message = message_protocol.internal.deserialize(message)
+            # logging.debug(f"MESSAGE {deserialized_message}")
+            if NODO_ID in deserialized_message.keys():
+                self._process_eof(deserialized_message)
+            else:    
+                self._process_data(deserialized_message)
+        except Exception as e:
+            logging.info(f"ERROR: {e}")
         ack()
 
     def start(self):
@@ -120,9 +125,9 @@ class AvgFilter:
                     
 
 def _filter_transactions(payment_format,average,results_queue, client_id):
-    logging.basicConfig(level=logging.WARNING)
+    logging.basicConfig(level=logging.INFO)
     transactions = []
-    logging.debug(f"payment_format: {payment_format}, average: {average/100}")
+    logging.info(f"payment_format: {payment_format}, average: {average/100}")
     if os.path.isfile(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv"):
         with open(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv", "r") as csvfile:
             fcntl.flock(csvfile, fcntl.LOCK_SH)
