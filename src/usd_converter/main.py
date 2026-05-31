@@ -11,6 +11,7 @@ MOM_HOST = os.environ["MOM_HOST"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
 FILTER_PREFIX = os.environ["FILTER_PREFIX"]
+UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 
 CONVERSION_API_URL = (
     "https://api.frankfurter.dev/v2/rates?from=2022-09-01&to=2022-09-05&base=USD"
@@ -46,6 +47,7 @@ class USDConverter:
         )
         self.conversion_rates = {}
         self._fetch_conversion_rates()
+        self.eof_count = {}
 
     def _save_conversion_rates(self):
         try:
@@ -123,10 +125,18 @@ class USDConverter:
             self.output_queue.send(message_protocol.internal.serialize(transaction))
 
     def _process_eof(self, deserialized_message):
-        # Just forward the EOF message
+        client_id = deserialized_message["client_id"]
+        nodo_id = deserialized_message["nodo_id"]
+        self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
+        if self.eof_count[client_id] < UPSTREAM_AMOUNT:
+            logging.warning(f"still some worker pending {self.eof_count[client_id]}, {UPSTREAM_AMOUNT}, nodo_id: {nodo_id}")
+            return
+        logging.warning(f"All workers done {self.eof_count[client_id]}, {UPSTREAM_AMOUNT}, nodo_id: {nodo_id}")
         self.output_queue.send(
-            message_protocol.internal.serialize(deserialized_message)
+            message_protocol.internal.serialize({"nodo_id":ID, "client_id":client_id})
         )
+        del self.eof_count[client_id]
+
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)

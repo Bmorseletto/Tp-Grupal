@@ -54,18 +54,6 @@ class JoinFilterQ3:
             self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
 
             if len(self.worker_finished_with_client[client_id]) == Q3_FILTER_AMOUNT:
-                # if os.path.isfile(RESULTS_STORAGE+f"{client_id}.csv"):
-                #     with open(RESULTS_STORAGE+f"{client_id}.csv", "r", newline="") as csvfile:
-                #         csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
-                #         for transaction in csv_reader:
-                #             logging.info(f"sending transaction: {transaction}, to gateway")
-                #             values = {
-                #                 "account" : transaction[0],
-                #                 "amount_paid" : transaction[1],
-                #                 "payment_format":  transaction[2]
-                #             }
-                #             results.append(values)
-                #     os.remove(RESULTS_STORAGE+f"{client_id}.csv")
                 results = sorted(self.results.pop(client_id, []), key=lambda x: x['payment_format'])
                 self.output_queue.send(message_protocol.internal.serialize([client_id, "q3"]))
                 del self.worker_finished_with_client[client_id]
