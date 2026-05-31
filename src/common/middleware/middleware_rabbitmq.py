@@ -57,8 +57,6 @@ def _publish_chunked(channel, exchange, routing_key, body, properties=None):
 class _ChunkReassembler:
     def __init__(self):
         self._buffers = {}
-        self._acks = {}
-        self._nacks = {}
 
     def process(self, body, ack, nack, deliver):
         try:
@@ -80,23 +78,13 @@ class _ChunkReassembler:
 
         if msg_id not in self._buffers:
             self._buffers[msg_id] = [None] * total
-            self._acks[msg_id] = []
-            self._nacks[msg_id] = []
 
         self._buffers[msg_id][idx] = chunk_data
-        # self._acks[msg_id].append(ack)
-        self._nacks[msg_id].append(nack)
-        ack()
 
         if all(c is not None for c in self._buffers[msg_id]):
             full_body = b"".join(self._buffers.pop(msg_id))
-            acks = self._acks.pop(msg_id)
-            nacks = self._nacks.pop(msg_id)
-            # for a in acks:
-            #     a()
-            last_nack = nacks[-1] if nacks else nack
-            deliver(full_body, lambda: None, last_nack)
-            del nacks
+            deliver(full_body, lambda: None, nack)
+        ack()
 
 
 def _create_connection(host):

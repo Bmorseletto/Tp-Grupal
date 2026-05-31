@@ -36,15 +36,16 @@ class AvgFilter:
         )
         self.avg_worker_finished_with_client = {}
         self.date_filter_finished_with_client ={}
+        self.payment_formats_averages = {}
 
     def _process_data(self, data):
-        logging.info(f"transaction data {data}")
+        # logging.debug(f"transaction data {data}")
         client_id= data.pop("client_id")
-        logging.info(f"processing data OF {client_id}")
+        logging.debug(f"processing data OF {client_id}")
         with open(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv", "a") as csvfile:
             csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
             csv_writer.writerow(data.values())
-            logging.info(f"writing {data} down")
+            # logging.debug(f"writing {data} down")
 
     def _process_eof(self, deserialized_message):
         try:
@@ -56,12 +57,13 @@ class AvgFilter:
                     self.date_filter_finished_with_client[client_id] = set()
             if "avg" in deserialized_message.keys():
                 self.avg_worker_finished_with_client[client_id].add(nodo_id)
+                self.payment_formats_averages.setdefault(client_id, {}).update(deserialized_message["avg"])
             else:
                 self.date_filter_finished_with_client[client_id].add(nodo_id)
             if len(self.date_filter_finished_with_client[client_id]) < DATE_FILTER_AMOUNT or len(self.avg_worker_finished_with_client[client_id]) < AVG_CALC_AMOUNT:
-                logging.info("WAITING FOR PREVIOUS WORKERS TO FINISH")
+                logging.debug("WAITING FOR PREVIOUS WORKERS TO FINISH")
                 return
-            payment_formats_averages = _get_payment_formats(client_id)
+            payment_formats_averages = self.payment_formats_averages.get(client_id, {})
             processes = []
             results=multiprocessing.Queue()
             for payment_format, average in payment_formats_averages.items():
@@ -82,7 +84,7 @@ class AvgFilter:
     
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {deserialized_message}")
+        # logging.debug(f"MESSAGE {deserialized_message}")
         if NODO_ID in deserialized_message.keys():
             self._process_eof(deserialized_message)
         else:    
@@ -102,32 +104,32 @@ class AvgFilter:
         self.output_queue.close()
        
 
-def _get_payment_formats(client_id):
-    averages = {}
-    if os.path.isfile(AVG_STORAGE+f"{client_id}.csv"):
-        with open(AVG_STORAGE+f"{client_id}.csv", "r") as csvfile:
-            fcntl.flock(csvfile, fcntl.LOCK_SH)
-            try:
-                csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
-                for avg in csv_reader:
-                    averages[avg[PAYMENT_METHOD]] = avg[AVERAGE]
-            finally:
-                fcntl.flock(csvfile, fcntl.LOCK_UN)
-    return averages
+# def _get_payment_formats(client_id):
+#     averages = {}
+#     if os.path.isfile(AVG_STORAGE+f"{client_id}.csv"):
+#         with open(AVG_STORAGE+f"{client_id}.csv", "r") as csvfile:
+#             fcntl.flock(csvfile, fcntl.LOCK_SH)
+#             try:
+#                 csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
+#                 for avg in csv_reader:
+#                     averages[avg[PAYMENT_METHOD]] = avg[AVERAGE]
+#             finally:
+#                 fcntl.flock(csvfile, fcntl.LOCK_UN)
+#     return averages
         
                     
 
 def _filter_transactions(payment_format,average,results_queue, client_id):
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
     transactions = []
-    logging.info(f"payment_format: {payment_format}, average: {average/100}")
+    logging.debug(f"payment_format: {payment_format}, average: {average/100}")
     if os.path.isfile(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv"):
         with open(TRANSACTION_STORAGE+f"{client_id}_{ID}.csv", "r") as csvfile:
             fcntl.flock(csvfile, fcntl.LOCK_SH)
             try:
                 csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
                 for line in csv_reader:
-                    logging.info(f"file line: {line}, payment_format: {payment_format}, average: {average/100}")
+                    # logging.debug(f"file line: {line}, payment_format: {payment_format}, average: {average/100}")
                     if line[3] != payment_format:
                         continue
                     if float(line[1]) < (average/100):
