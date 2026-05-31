@@ -140,6 +140,7 @@ def _filter_transactions(payment_format,average,results_queue, client_id):
                     if float(line[1]) < (average/100):
                         transaction ={
                             "client_id": client_id,
+                            "from_bank": line[4],
                             "account": line[0],
                             "amount_paid": line[1],
                             "payment_format": line[3]

@@ -29,7 +29,9 @@ class DollarAmtFilter:
         if transaction["amount_paid"] < 50:
             output = {
                 "client_id": transaction["client_id"],
+                "from_bank":transaction.get("from_bank", ""),
                 "account": transaction["account"],
+                "to_bank":transaction.get("to_bank", ""),
                 "to_account": transaction["to_account"],
                 "amount_paid": transaction["amount_paid"],
             }

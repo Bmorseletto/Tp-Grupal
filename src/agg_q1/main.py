@@ -28,7 +28,9 @@ class JoinFilterQ1:
         self.worker_finished_with_client.setdefault(client_id, set())
         self.output_queue.send(
             message_protocol.internal.serialize([client_id, "q1", [{
+            "from_bank":transaction.get("from_bank", ""),
             "account": transaction.get("account", ""),
+            "to_bank":transaction.get("to_bank", ""),
             "to_account": transaction.get("to_account", ""),
             "amount_paid": transaction.get("amount_paid", ""),
         }]])

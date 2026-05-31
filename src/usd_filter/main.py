@@ -67,7 +67,9 @@ class CurrencyFilter:
         if transaction["payment_currency"] == "US Dollar":
             output = {
                 "client_id": transaction["client_id"],
+                "from_bank":transaction.get("from_bank", ""),
                 "account": transaction["account"],
+                "to_bank":transaction.get("to_bank", ""),
                 "to_account": transaction["to_account"],
                 "amount_paid": transaction["amount_paid"],
             }
@@ -109,7 +111,8 @@ class CurrencyFilter:
                 "account": transaction["account"],
                 "amount_paid": transaction["amount_paid"],
                 "timestamp": transaction["timestamp"],
-                "payment_format":  transaction["payment_format"]
+                "payment_format":  transaction["payment_format"],
+                "from_bank":transaction["from_bank"]
             }
             routing_key = (
                 self.filter_q_prefixes[2]

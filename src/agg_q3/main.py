@@ -39,6 +39,7 @@ class JoinFilterQ3:
                 self.results[client_id] = []
             self.output_queue.send(
                 message_protocol.internal.serialize([client_id, "q3", [{
+                "from_bank":transaction.get("from_bank", ""),
                 "account": transaction.get("account", ""),
                 "amount_paid": transaction.get("amount_paid", ""),
                 "payment_format": transaction.get("payment_format", ""),
