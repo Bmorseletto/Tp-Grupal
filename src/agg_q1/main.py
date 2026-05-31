@@ -26,17 +26,13 @@ class JoinFilterQ1:
     def _process_data(self, transaction: dict):
         client_id = transaction.pop("client_id")
         self.worker_finished_with_client.setdefault(client_id, set())
-        # with open(f"/output/q1_{client_id}.csv", "a") as csvfile:
-        #     csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-        #     csv_writer.writerow(transaction.values())
-        #     logging.debug(f"writing {transaction} down")
-        if client_id not in self.results:
-            self.results[client_id] = []
-        self.results[client_id].append({
+        self.output_queue.send(
+            message_protocol.internal.serialize([client_id, "q1", [{
             "account": transaction.get("account", ""),
             "to_account": transaction.get("to_account", ""),
             "amount_paid": transaction.get("amount_paid", ""),
-        })
+        }]])
+        )
 
     def _process_eof(self, eof_message):
         client_id = eof_message["client_id"]
@@ -61,7 +57,7 @@ class JoinFilterQ1:
             #     results = []
             results = self.results.pop(client_id, [])
             self.output_queue.send(
-                message_protocol.internal.serialize([client_id, "q1", results])
+                message_protocol.internal.serialize([client_id, "q1"])
             )
             del self.worker_finished_with_client[client_id]
             logging.info(f"finished processing EOF of {client_id} sent results to gateway")

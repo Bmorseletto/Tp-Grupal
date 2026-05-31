@@ -45,7 +45,9 @@ class JoinFilterQ2:
     def _send_results(self, client_id):
         results = self._relate_bank_id_bank_name(client_id)
         logging.info(f"Sending {len(results)} results to {OUTPUT_QUEUE}")
-        self.output_queue.send(message_protocol.internal.serialize([client_id, "q2", results]))
+        for result in results:
+            self.output_queue.send(message_protocol.internal.serialize([client_id, "q2", [result]]))
+        self.output_queue.send(message_protocol.internal.serialize([client_id, "q2"]))
         # csv_path = PATH_TRANSACTIONS + f"{client_id}.csv"
         # if os.path.exists(csv_path):
         #     os.remove(csv_path)

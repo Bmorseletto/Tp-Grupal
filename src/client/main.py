@@ -6,6 +6,7 @@ import signal
 import threading
 from pathlib import Path
 from common import message_protocol
+from datetime import datetime
 
 TRANSACTIONS_INPUT_FILE = os.environ["TRANSACTIONS_INPUT_FILE"]
 ACCOUNTS_INPUT_FILE = os.environ["ACCOUNTS_INPUT_FILE"]
@@ -45,7 +46,7 @@ class Client:
             message_protocol.external.send_msg(
                 self.server_socket, msg_type, *args
             )
-            message_protocol.external.recv_msg(self.server_socket)
+            #message_protocol.external.recv_msg(self.server_socket)
 
     def _send_account_records(self, accounts_file):
         try:
@@ -116,6 +117,7 @@ class Client:
     def recv_results(self, output_file):
         filepath = Path(output_file)
         name = filepath.name
+        
         while True:
             msg_type, payload = message_protocol.external.recv_msg(self.server_socket)
             if msg_type == message_protocol.external.MsgType.END_OF_RESULTS:
@@ -123,33 +125,44 @@ class Client:
             if msg_type != message_protocol.external.MsgType.RESULTS:
                 raise TypeError(f"Unexpected message type: {msg_type}")
             for query_id, query_results in payload.items():
-                with open(filepath.with_name(f"{query_id}_{name}"), "w") as csvfile:
+                with open(filepath.with_name(f"{query_id}_{name}"), "a") as csvfile:
                     csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
                     for row in query_results:
                         csv_writer.writerow(row)
 
+
+def send_data(client):
+    account_thread = threading.Thread(
+            target=client._send_account_records,
+            args=(ACCOUNTS_INPUT_FILE,),
+            daemon=True,
+        )
+    account_thread.start()
+
+    client.send_transaction_records(TRANSACTIONS_INPUT_FILE)
+
+    account_thread.join()
 
 def main() -> int:
     logging.basicConfig(level=logging.WARNING)
     client = Client()
 
     try:
+        start = datetime.now()
         client.connect(SERVER_HOST, SERVER_PORT)
 
-        account_thread = threading.Thread(
-            target=client._send_account_records,
-            args=(ACCOUNTS_INPUT_FILE,),
+        
+        send_thread = threading.Thread(
+            target=send_data,
+            args=(client,),
             daemon=True,
         )
-        account_thread.start()
-
-        client.send_transaction_records(TRANSACTIONS_INPUT_FILE)
-
-        account_thread.join()
-        if client._send_error:
-            raise client._send_error
+        send_thread.start()
 
         client.recv_results(OUTPUT_FILE)
+        send_thread.join()
+        middle = datetime.now()
+        logging.warning(f"Time elapsed: {middle - start}")
     except socket.error as e:
         if not client.closed:
             logging.error(f"The connection with the server was lost {e}")

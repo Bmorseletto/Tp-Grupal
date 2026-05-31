@@ -64,9 +64,9 @@ def handle_client_request(client_socket, message_handler):
                 accounts_output_queue.send(serialized_message)
                 
             # ACK
-            message_protocol.external.send_msg(
-                client_socket, message_protocol.external.MsgType.ACK
-            )
+            #message_protocol.external.send_msg(
+            #    client_socket, message_protocol.external.MsgType.ACK
+            #)
     except socket.error:
         logging.error("The connection with the server was lost")
     except IncompleteReadError:
@@ -93,11 +93,9 @@ def _make_result_callback(client_list, queries_remaining):
     def _consume_result(message, ack, nack):
         try:
             deserialized = message_protocol.internal.deserialize(message)
+            #logging.info(f"deserialized {deserialized}, {len(deserialized)}")
             client_id = deserialized[0]
             query_id = deserialized[1]
-            results = deserialized[2]
-            
-            logging.info(f"Received {query_id} results for client {client_id}")
 
             target_index = None
             target_socket = None
@@ -106,26 +104,29 @@ def _make_result_callback(client_list, queries_remaining):
                     target_index = i
                     target_socket = sock
                     break
-
+            
             if target_index is None:
-                logging.warning(f"no matching client for result {client_id}")
+                logging.error(f"no matching client for result {client_id}")
                 nack()
                 return
 
-            message_protocol.external.send_msg(
-                target_socket,
-                message_protocol.external.MsgType.RESULTS,
-                {query_id: results},
-            )
-
-            queries_remaining[client_id] = queries_remaining.get(client_id, QUERY_AMOUNT) - 1
-            if queries_remaining[client_id] <= 0:
+            if len(deserialized) == 3:
+                results = deserialized[2]
                 message_protocol.external.send_msg(
                     target_socket,
-                    message_protocol.external.MsgType.END_OF_RESULTS,
+                    message_protocol.external.MsgType.RESULTS,
+                    {query_id: results},
                 )
-                client_list.pop(target_index)
-                del queries_remaining[client_id]
+            else:
+                logging.info(f"deserialized {deserialized}, {len(deserialized)}")
+                queries_remaining[client_id] = queries_remaining.get(client_id, QUERY_AMOUNT) - 1
+                if queries_remaining[client_id] <= 0:
+                    message_protocol.external.send_msg(
+                        target_socket,
+                        message_protocol.external.MsgType.END_OF_RESULTS,
+                    )
+                    client_list.pop(target_index)
+                    del queries_remaining[client_id]
             ack()
         except socket.error:
             logging.error("The connection with the server was lost")
