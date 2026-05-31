@@ -64,6 +64,9 @@ class AggregatorQ4:
                                 "origin_account": row["origin_account"],
                                 "destinations": eval(row["destinations"])
                             }
+                            for destination in values["destinations"].keys():
+                                destination=dict(item.split('=') for item in destination.split())
+                                self.output_queue.send(message_protocol.internal.serialize([client_id, "q4",[destination]]))
                             self.output_queue.send(message_protocol.internal.serialize([client_id, "q4",[values]]))
                             logging.info(f"sending result: {values}")
                     os.remove(path)

@@ -148,6 +148,7 @@ class Client:
 
 
 def send_data(client):
+    start = datetime.now()
     account_thread = threading.Thread(
             target=client._send_account_records,
             args=(ACCOUNTS_INPUT_FILE,),
@@ -158,7 +159,8 @@ def send_data(client):
     client.send_transaction_records(TRANSACTIONS_INPUT_FILE)
 
     account_thread.join()
-    logging.warning(f"Finished sending everything")
+    middle = datetime.now()
+    logging.warning(f"Finished sending everything: {middle - start}")
 
 def main() -> int:
     logging.basicConfig(level=logging.WARNING)
