@@ -59,7 +59,7 @@ class ScatterGatherDetector:
             if not valid_destinations:
                 continue
 
-            print(f"* bank={result['origin_bank']} account={result['origin_account']} destinations={valid_destinations}")
+            logging.info(f"* bank={result['origin_bank']} account={result['origin_account']} destinations={valid_destinations}")
 
             filtered_result = {
                 "client_id": client_id,
@@ -76,7 +76,7 @@ class ScatterGatherDetector:
 
     def process_message(self, message, ack, nack):
         deserialized = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {deserialized}")
+        #logging.info(f"MESSAGE {deserialized}")
         if len(deserialized) == 2:
             self._process_eof(deserialized)
         else:

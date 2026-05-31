@@ -98,7 +98,7 @@ class GraphFilter:
 
     def _send_result(self, result, bank, account):
         routing_key = self._get_output_routing_key(bank, account)
-        logging.info(f"Sending to routing key: {routing_key} | results: {result}")
+        #logging.info(f"Sending to routing key: {routing_key} | results: {result}")
         self.output_exchange.send_by_key(
             message_protocol.internal.serialize(result), routing_key
         )
@@ -125,9 +125,9 @@ class GraphFilter:
     def _print_results(self, client_id):
         origins = self.origin_groups.get(client_id, {})
 
-        logging.info(f"Q4 Graph results for client {client_id}")
-        print(f"Q4 Graph results for client {client_id}")
-        print("Accounts with second level transactions:")
+        #logging.info(f"Q4 Graph results for client {client_id}")
+        #print(f"Q4 Graph results for client {client_id}")
+        #print("Accounts with second level transactions:")
         for origin, data in origins.items():
             second_level_destinations = self._get_second_level_destinations(client_id, origin)
             if not second_level_destinations:
@@ -141,14 +141,14 @@ class GraphFilter:
                 "total_amount": data["total_amount"],
                 "destinations": formatted_edges,
             }
-            logging.info(
-                f"Transaction info:  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={formatted_edges}"
-            )
+            #logging.info(
+            #    f"Transaction info:  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={formatted_edges}"
+            #)
             self._send_result(result, origin[0], origin[1])
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {deserialized_message}")
+        #logging.info(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)
         else:

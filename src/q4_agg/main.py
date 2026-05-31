@@ -39,7 +39,7 @@ class AggregatorQ4:
                     "origin_account": result.get("origin_account"),
                     "destinations": result.get("destinations", {})
                 })
-            logging.info(f"writing result for client {client_id} down")
+            #logging.info(f"writing result for client {client_id} down")
         except Exception as e:
             logging.error(f"ERROR: {e}")
 
@@ -64,17 +64,17 @@ class AggregatorQ4:
                                 "origin_account": row["origin_account"],
                                 "destinations": eval(row["destinations"])
                             }
-                            results.append(values)
+                            self.output_queue.send(message_protocol.internal.serialize([client_id, "q4",[values]]))
                             logging.info(f"sending result: {values}")
                     os.remove(path)
-                self.output_queue.send(message_protocol.internal.serialize([client_id, "q4",results]))
+                self.output_queue.send(message_protocol.internal.serialize([client_id, "q4"]))
                 logging.info(f"Q4 RESULTS SENT for client {client_id}")
         except Exception as e:
             logging.error(f"ERROR: {e}")
 
     def process_message(self, message, ack, nack):
         deserialized = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE: {deserialized}")
+        #logging.info(f"MESSAGE: {deserialized}")
         if len(deserialized) == 2:  # EOF
             self._process_eof(deserialized)
         else:

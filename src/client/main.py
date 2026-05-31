@@ -124,8 +124,8 @@ class Client:
                 break
             if msg_type != message_protocol.external.MsgType.RESULTS:
                 raise TypeError(f"Unexpected message type: {msg_type}")
-
-            for query_id, query_results in payload.items():
+            for i in range(1,5):
+                query_id = f"q{i}"
                 if not os.path.isfile(filepath.with_name(f"{query_id}_{name}")):
                     with open(filepath.with_name(f"{query_id}_{name}"), "w") as csvfile:
                         if query_id == "q1":
@@ -137,6 +137,10 @@ class Client:
                         if query_id == "q3":
                             csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
                             csv_writer.writerow(["From Bank","Account","Amount Paid","Payment Format"])
+                        if query_id == "q4":
+                            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                            csv_writer.writerow(["From Bank","Account","Destinations"])
+            for query_id, query_results in payload.items():
                 with open(filepath.with_name(f"{query_id}_{name}"), "a") as csvfile:
                     csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
                     for row in query_results:
