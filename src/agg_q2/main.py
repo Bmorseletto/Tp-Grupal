@@ -25,7 +25,7 @@ class JoinFilterQ2:
         )
         self.results = {}
         self.worker_finished_with_client = {}
-        self.acc_number_to_bank_name = {}
+        self.banks = {}
         self.clients_accounts_eof = set()
 
     def _process_transaction(self, transaction_message):
@@ -65,7 +65,7 @@ class JoinFilterQ2:
         #         values = {
         #             "account": transaction[0],
         #             "amount_paid": transaction[1],
-        #             "from_bank": self.acc_number_to_bank_name.get(transaction[0], transaction[2]),
+        #             "from_bank": self.banks.get(transaction[0], transaction[2]),
         #         }
         #         results.append(values)
         #     return results
@@ -74,7 +74,7 @@ class JoinFilterQ2:
             enriched.append({
                 "account": r["account"],
                 "amount_paid": r["amount_paid"],
-                "from_bank": self.acc_number_to_bank_name.get(r["account"], r["from_bank"]),
+                "from_bank": self.banks.get(r["from_bank"], r["from_bank"]),
             })
         return enriched
 
@@ -96,7 +96,7 @@ class JoinFilterQ2:
                 # if client_id in self.worker_finished_with_client and len(self.worker_finished_with_client[client_id]) == Q2_FILTER_AMOUNT:
                 #     self._send_results(client_id)
             else:
-                self.acc_number_to_bank_name[deserialized_message["account_number"]] = deserialized_message["bank_name"]
+                self.banks[deserialized_message["bank_id"]] = deserialized_message["bank_name"]
             ack()
         except Exception:
             logging.exception("An error occurred while processing an accounts message")
