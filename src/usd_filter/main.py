@@ -118,7 +118,7 @@ class CurrencyFilter:
             routing_key = (
                 self.filter_q_prefixes[2]
                 + str(
-                    zlib.crc32(output["payment_format"].encode("utf-8"))
+                    zlib.crc32(output["account"].encode("utf-8"))
                     % self.filter_q_amounts[2]
                 )
             )  # Usamos el banco y la cantidad de filtros Q2 para routear  las transacciones del mismo banco siempre al mismo nodo

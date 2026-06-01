@@ -141,9 +141,10 @@ class GraphFilter:
                 "total_amount": data["total_amount"],
                 "destinations": formatted_edges,
             }
-            #logging.info(
-            #    f"Transaction info:  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={formatted_edges}"
-            #)
+            if result["origin_account"] == "804070470":  
+                logging.info(
+                    f"Transaction info:  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={formatted_edges}"
+                )
             self._send_result(result, origin[0], origin[1])
 
     def process_messsage(self, message, ack, nack):

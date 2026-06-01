@@ -45,6 +45,7 @@ class DateFilter:
         self.counter = 0
         self.counter2 = 0
         self.eof_count = {}
+        self.graph_router = None
         logging.info(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
         logging.info(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
         logging.info(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
@@ -62,9 +63,11 @@ class DateFilter:
             for i in range(len(self.output_exchanges)):
                 logging.debug(f"ROUTING_HASH_TARGET I: {self.routing_hash_targets[i]}")
                 if '+' in self.routing_hash_targets[i]:
-                    self.graph_router = GraphRouterCSV(self.outputs_amounts[i])
+                    if self.graph_router == None:
+                        self.graph_router = GraphRouterCSV(self.outputs_amounts[i])
                      # QUERY 4
                     routing_key_q4 = self.graph_router.get_node(
+                        transaction.get("client_id", ""),
                         transaction.get("to_bank", ""),
                         transaction.get("to_account", ""),
                         transaction.get("from_bank", ""),
