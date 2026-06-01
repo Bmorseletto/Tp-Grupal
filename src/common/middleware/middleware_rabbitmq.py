@@ -287,7 +287,7 @@ def _start_consuming(message_middleware, on_message_callback):
         reassembler.process(body, ack, ch.basic_nack, on_message_callback)
         message_middleware.set_delivery_tag(method.delivery_tag)
 
-    message_middleware._channel.basic_qos(prefetch_count=1)
+    message_middleware._channel.basic_qos(prefetch_count=50)
     consumer_tag = message_middleware._channel.basic_consume(
         queue=message_middleware._queue_name,
         on_message_callback=callback,

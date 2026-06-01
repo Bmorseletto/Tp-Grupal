@@ -33,6 +33,7 @@ class CurrencyFilter:
         self.filter_q_amounts = [
             int(os.environ[f"FILTER_Q{i}_AMOUNT"]) for i in range(1, TOTAL_QUERIES + 1)
         ]
+        self.counter = 0
         self.output_exchanges = [
             middleware.MessageMiddlewareExchangeRabbitMQ(
                 MOM_HOST,
@@ -128,6 +129,7 @@ class CurrencyFilter:
 
     def _send_to_date_filter(self, transaction):
         if transaction["payment_currency"] == "US Dollar":
+            self.counter +=1
             routing_key = (
                 FILTER_DATE_PREFIX
                 + str(
@@ -149,6 +151,7 @@ class CurrencyFilter:
                 ),
                 self.filter_q_prefixes[i],
             )
+        logging.warning(f"{self.counter} passed the filter")
         self.date_filter_exchange.send_by_key(
                 message_protocol.internal.serialize(
                     {"nodo_id": ID, "client_id": deserialized_message[0]}
