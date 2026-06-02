@@ -6,6 +6,7 @@ import signal
 import threading
 from pathlib import Path
 from common import message_protocol
+from datetime import datetime
 
 TRANSACTIONS_INPUT_FILE = os.environ["TRANSACTIONS_INPUT_FILE"]
 ACCOUNTS_INPUT_FILE = os.environ["ACCOUNTS_INPUT_FILE"]
@@ -23,7 +24,7 @@ class Client:
         self._prev_sigterm_handler = signal.signal(signal.SIGTERM, self.handle_sigterm)
 
     def handle_sigterm(self, signum, frame):
-        logging.info("Recieved SIGTERM signal")
+        logging.warning("Received SIGTERM signal")
         self.closed = True
         self.disconnect()
 
@@ -45,16 +46,14 @@ class Client:
             message_protocol.external.send_msg(
                 self.server_socket, msg_type, *args
             )
-            message_protocol.external.recv_msg(self.server_socket)
+            #message_protocol.external.recv_msg(self.server_socket)
 
     def _send_account_records(self, accounts_file):
         try:
-            logging.info("Sending Account records")
             with open(accounts_file, newline="\n") as csvfile:
                 csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
                 _headers = next(csv_reader)
                 for row in csv_reader:
-                    logging.info(f"ROW: {row}")
                     (
                         bank_name,
                         bank_id,
@@ -73,21 +72,17 @@ class Client:
                         message_protocol.external.MsgType.ACCOUNT_RECORD,
                         accounts
                     )
-            logging.info("Sending Accounts EOF")
             self._send_and_wait_ack(
                 message_protocol.external.MsgType.END_OF_ACCOUNTS
             )
-            logging.info("accounts sent")
         except Exception as e:
             self._send_error = e
 
     def send_transaction_records(self, transactions_file):
-        logging.info("Sending transaction records")
         with open(transactions_file, newline="\n") as csvfile:
             csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
             _headers = next(csv_reader)
             for row in csv_reader:
-                logging.info(f"ROW: {row}")
                 (
                     timestamp,
                     og_bank,
@@ -115,60 +110,78 @@ class Client:
                     message_protocol.external.MsgType.TRANSACTION_RECORD,
                     transaction
                 )
-        logging.info("Sending transaction EOF")
         self._send_and_wait_ack(
             message_protocol.external.MsgType.END_OF_TRANSACTIONS
         )
-        logging.info("transactions sent")
 
     def recv_results(self, output_file):
         filepath = Path(output_file)
         name = filepath.name
+        
         while True:
-            logging.info("Receiving query result")
             msg_type, payload = message_protocol.external.recv_msg(self.server_socket)
-            logging.info(f"Received message type: {msg_type}")
-            if msg_type == message_protocol.external.MsgType.RESULTS:
-                message_protocol.external.send_msg(
-                    self.server_socket, message_protocol.external.MsgType.ACK
-                )
-                for query_id, query_results in payload.items():
-                    with open(filepath.with_name(f"{query_id}_{name}"), "w") as csvfile:
-                        csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-                        for row in query_results:
-                            csv_writer.writerow(row)
-            elif msg_type == message_protocol.external.MsgType.END_OF_RESULTS:
-                message_protocol.external.send_msg(
-                    self.server_socket, message_protocol.external.MsgType.ACK
-                )
+            if msg_type == message_protocol.external.MsgType.END_OF_RESULTS:
                 break
-            else:
+            if msg_type != message_protocol.external.MsgType.RESULTS:
                 raise TypeError(f"Unexpected message type: {msg_type}")
+            for i in range(1,5):
+                query_id = f"q{i}"
+                if not os.path.isfile(filepath.with_name(f"{query_id}_{name}")):
+                    with open(filepath.with_name(f"{query_id}_{name}"), "w") as csvfile:
+                        if query_id == "q1":
+                            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                            csv_writer.writerow(["From Bank","Account","To Bank","Account.1","Amount Paid"])
+                        if query_id == "q2":
+                            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                            csv_writer.writerow(["Account","Amount Paid","Bank Name"])
+                        if query_id == "q3":
+                            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                            csv_writer.writerow(["From Bank","Account","Amount Paid","Payment Format"])
+                        if query_id == "q4":
+                            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                            csv_writer.writerow(["From Bank","From Account","To Bank", "To Account"])
+            for query_id, query_results in payload.items():
+                with open(filepath.with_name(f"{query_id}_{name}"), "a") as csvfile:
+                    csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                    for row in query_results:
+                        csv_writer.writerow(row)
 
 
-def main() -> int:
-    logging.basicConfig(level=logging.INFO)
-    client = Client()
-
-    try:
-        client.connect(SERVER_HOST, SERVER_PORT)
-        logging.info("Connected to server")
-
-        account_thread = threading.Thread(
+def send_data(client):
+    start = datetime.now()
+    account_thread = threading.Thread(
             target=client._send_account_records,
             args=(ACCOUNTS_INPUT_FILE,),
             daemon=True,
         )
-        account_thread.start()
+    account_thread.start()
 
-        client.send_transaction_records(TRANSACTIONS_INPUT_FILE)
+    client.send_transaction_records(TRANSACTIONS_INPUT_FILE)
 
-        account_thread.join()
-        if client._send_error:
-            raise client._send_error
+    account_thread.join()
+    middle = datetime.now()
+    logging.warning(f"Finished sending everything: {middle - start}")
+
+def main() -> int:
+    logging.basicConfig(level=logging.WARNING)
+    client = Client()
+
+    try:
+        start = datetime.now()
+        client.connect(SERVER_HOST, SERVER_PORT)
+
+        
+        send_thread = threading.Thread(
+            target=send_data,
+            args=(client,),
+            daemon=True,
+        )
+        send_thread.start()
 
         client.recv_results(OUTPUT_FILE)
-        logging.info("results received")
+        send_thread.join()
+        middle = datetime.now()
+        logging.warning(f"Time elapsed: {middle - start}")
     except socket.error as e:
         if not client.closed:
             logging.error(f"The connection with the server was lost {e}")

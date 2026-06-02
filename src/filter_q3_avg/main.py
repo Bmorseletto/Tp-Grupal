@@ -42,14 +42,14 @@ class AvgCalculator:
             payment_format = transaction["payment_format"]
             client_id =transaction["client_id"]
             if client_id not in self.transactions_per_payment_format:
-                logging.info(f"new_entry: {client_id}")
+                logging.debug(f"new_entry: {client_id}")
                 self.transactions_per_payment_format[client_id] = {}
             if payment_format not in self.transactions_per_payment_format[client_id].keys():
                 self.transactions_per_payment_format[client_id][payment_format] = {"transactions":0,"total amount paid":0}
             payment_format_current_data=self.transactions_per_payment_format[client_id][payment_format]
             payment_format_current_data["transactions"] +=1
             payment_format_current_data["total amount paid"] += transaction["amount_paid"]
-            logging.info(f"dic: {self.transactions_per_payment_format[client_id]}")
+            logging.debug(f"dic: {self.transactions_per_payment_format[client_id]}")
         except Exception as e:
             logging.error(f"ERROR: {e}")
 
@@ -59,33 +59,35 @@ class AvgCalculator:
         if self.eof_count[client_id] < UPSTREAM_AMOUNT:
             return
         logging.info(f"transactions per payment: {self.transactions_per_payment_format}")
+        results = {}
         if client_id in self.transactions_per_payment_format.keys():
             for payment_format, data in self.transactions_per_payment_format[client_id].items():
                 average = {
                     "avg": data["total amount paid"] / data["transactions"], 
                     "payment_format": payment_format
                 }
-                with open(AVG_STORAGE+f"{client_id}.csv", "a") as csvfile:
-                    fcntl.flock(csvfile, fcntl.LOCK_EX)
-                    try:
-                        csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-                        csv_writer.writerow(average.values())
-                    except Exception as e:
-                        logging.error(f"ERROR: {e}")
-                    finally:
-                        fcntl.flock(csvfile, fcntl.LOCK_UN)
-                logging.info(f"writing {average} down")
+                results[payment_format] = average["avg"]
+                # with open(AVG_STORAGE+f"{client_id}.csv", "a") as csvfile:
+                #     fcntl.flock(csvfile, fcntl.LOCK_EX)
+                #     try:
+                #         csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                #         csv_writer.writerow(average.values())
+                #     except Exception as e:
+                #         logging.error(f"ERROR: {e}")
+                #     finally:
+                #         fcntl.flock(csvfile, fcntl.LOCK_UN)
+                # logging.debug(f"writing {average} down")
             self.transactions_per_payment_format.pop(client_id)
-        logging.info(f"SENDING EOF")
-        self.output_exchange.send_by_key(message_protocol.internal.serialize({"nodo_id":ID, "client_id":client_id, "avg": True}), OUTPUT_PREFIX)
+        logging.info(f"AVG RESULTS: client_id: {client_id}, results: {results}")
+        self.output_exchange.send_by_key(message_protocol.internal.serialize({"nodo_id":ID, "client_id":client_id, "avg": results}), OUTPUT_PREFIX)
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:
-            logging.info(f"EOF {deserialized_message}")
+            logging.debug(f"EOF {deserialized_message}")
             self._process_eof(deserialized_message)
-        else:    
+        else:
+            logging.debug(f"MESSAGE {deserialized_message}")
             self._process_data(deserialized_message)
         ack()
 

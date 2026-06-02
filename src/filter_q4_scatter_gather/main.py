@@ -1,3 +1,4 @@
+from collections import defaultdict
 import os
 import logging
 import signal
@@ -24,6 +25,8 @@ class ScatterGatherDetector:
         self.output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
             MOM_HOST, OUTPUT_PREFIX
         )
+        self.suspicious_accounts = {}
+        self.accounts = {}
         self.eof_count = {}
         self.results = {}
 
@@ -41,17 +44,32 @@ class ScatterGatherDetector:
             return
 
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
-        logging.info(f"EOF recibido de GraphFilter para client {client_id} ({self.eof_count[client_id]}/{Q4_GRAPH_AMOUNT})")
+        #logging.info(f"EOF recibido de GraphFilter para client {client_id} ({self.eof_count[client_id]}/{Q4_GRAPH_AMOUNT})")
 
         if self.eof_count[client_id] < Q4_GRAPH_AMOUNT:
             return
 
-        self._print_and_send(client_id)
+        #self._print_and_send(client_id)
+        final_dict = {}
+        if client_id in self.accounts.keys():
+            for account, transactions in self.suspicious_accounts[client_id].items():
+                for middle_man, transaction in transactions.items():
+                    for final_account, final_transactions in self.accounts[client_id].items():
+                        if middle_man in final_transactions.keys():
+                            if account not in final_dict.keys():
+                                final_dict[account] = {}
+                            if final_account not in final_dict[account].keys():
+                                final_dict[account][final_account]=0
+                            final_dict[account][final_account] += 1
+        self.output_queue.send(message_protocol.internal.serialize({"client_id": client_id, "suspicious_accounts": final_dict}))
+        self.output_queue.send( message_protocol.internal.serialize(
+            {"nodo_id": ID, "client_id": client_id}
+        ))
         self.results.pop(client_id, None)
         self.eof_count.pop(client_id, None)
 
     def _print_and_send(self, client_id):
-        logging.info(f"Scatter-Gather results for client {client_id}")
+        #logging.info(f"Scatter-Gather results for client {client_id}")
 
         for result in self.results.get(client_id, []):
             destinations = result.get("destinations", {})
@@ -59,7 +77,7 @@ class ScatterGatherDetector:
             if not valid_destinations:
                 continue
 
-            print(f"* bank={result['origin_bank']} account={result['origin_account']} destinations={valid_destinations}")
+            #logging.info(f"* bank={result['origin_bank']} account={result['origin_account']} destinations={valid_destinations}")
 
             filtered_result = {
                 "client_id": client_id,
@@ -76,11 +94,19 @@ class ScatterGatherDetector:
 
     def process_message(self, message, ack, nack):
         deserialized = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {deserialized}")
+        #logging.info(f"MESSAGE {deserialized}")
         if len(deserialized) == 2:
             self._process_eof(deserialized)
-        else:
-            self._process_data(deserialized)
+        elif "origin_account" in deserialized.keys():
+            client_id=deserialized.pop("client_id")
+            if client_id not in self.suspicious_accounts:
+                self.suspicious_accounts[client_id] = {}
+            self.suspicious_accounts[client_id][deserialized["origin_account"]] = deserialized["transactions"]
+        elif "destination_account" in deserialized.keys():
+            client_id=deserialized.pop("client_id")
+            if client_id not in self.accounts:
+                self.accounts[client_id] = defaultdict(dict)
+            self.accounts[client_id][deserialized["destination_account"]].update(deserialized["transactions"])
         ack()
 
     def start(self):

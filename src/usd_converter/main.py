@@ -11,6 +11,7 @@ MOM_HOST = os.environ["MOM_HOST"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
 FILTER_PREFIX = os.environ["FILTER_PREFIX"]
+UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 
 CONVERSION_API_URL = (
     "https://api.frankfurter.dev/v2/rates?from=2022-09-01&to=2022-09-05&base=USD"
@@ -46,6 +47,7 @@ class USDConverter:
         )
         self.conversion_rates = {}
         self._fetch_conversion_rates()
+        self.eof_count = {}
 
     def _save_conversion_rates(self):
         try:
@@ -59,7 +61,7 @@ class USDConverter:
             try:
                 with open(STATE_FILE, "r") as f:
                     self.conversion_rates = json.load(f)
-                logging.info("Loaded conversion rates from state file.")
+                logging.debug("Loaded conversion rates from state file.")
                 return
             except IOError as e:
                 logging.exception(f"Error loading conversion rates: {e}")
@@ -90,12 +92,12 @@ class USDConverter:
         if currency == US_DOLLAR:
             return amount
         if date not in self.conversion_rates:
-            logging.info(f"No conversion rates found for date {date}.")
+            logging.warning(f"No conversion rates found for date {date}.")
             return None
         day_rates = self.conversion_rates.get(date)
         rate = day_rates.get(currency)
         if not rate:
-            logging.info(
+            logging.warning(
                 f"No conversion rate found for currency {currency} on date {date}."
             )
             return None
@@ -107,7 +109,7 @@ class USDConverter:
         date = str(datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M").date())
         # logging.debug(f"Processing transaction: {transaction}")
         if amount is None or currency is None or date is None:
-            logging.info(f"Message missing required fields: {transaction}")
+            logging.warning(f"Message missing required fields: {transaction}")
             return
 
         converted_amount = self._convert_to_usd(amount, currency, date)
@@ -123,10 +125,18 @@ class USDConverter:
             self.output_queue.send(message_protocol.internal.serialize(transaction))
 
     def _process_eof(self, deserialized_message):
-        # Just forward the EOF message
+        client_id = deserialized_message["client_id"]
+        nodo_id = deserialized_message["nodo_id"]
+        self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
+        if self.eof_count[client_id] < UPSTREAM_AMOUNT:
+            logging.warning(f"still some worker pending {self.eof_count[client_id]}, {UPSTREAM_AMOUNT}, nodo_id: {nodo_id}")
+            return
+        logging.warning(f"All workers done {self.eof_count[client_id]}, {UPSTREAM_AMOUNT}, nodo_id: {nodo_id}")
         self.output_queue.send(
-            message_protocol.internal.serialize(deserialized_message)
+            message_protocol.internal.serialize({"nodo_id":ID, "client_id":client_id})
         )
+        del self.eof_count[client_id]
+
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
@@ -151,7 +161,7 @@ class USDConverter:
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
     usd_converter_filter = USDConverter()
     signal.signal(
         signal.SIGTERM,

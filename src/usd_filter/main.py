@@ -33,6 +33,7 @@ class CurrencyFilter:
         self.filter_q_amounts = [
             int(os.environ[f"FILTER_Q{i}_AMOUNT"]) for i in range(1, TOTAL_QUERIES + 1)
         ]
+        self.counter = 0
         self.output_exchanges = [
             middleware.MessageMiddlewareExchangeRabbitMQ(
                 MOM_HOST,
@@ -67,7 +68,9 @@ class CurrencyFilter:
         if transaction["payment_currency"] == "US Dollar":
             output = {
                 "client_id": transaction["client_id"],
+                "from_bank":transaction.get("from_bank", ""),
                 "account": transaction["account"],
+                "to_bank":transaction.get("to_bank", ""),
                 "to_account": transaction["to_account"],
                 "amount_paid": transaction["amount_paid"],
             }
@@ -78,7 +81,7 @@ class CurrencyFilter:
                     % self.filter_q_amounts[0]
                 )
             )  # Usamos la account de origen y la cantidad de filtros Q1 para routear el mensaje
-            logging.info(f"routing key for Q1 {routing_key}")
+            logging.debug(f"routing key for Q1 {routing_key}")
             self.output_exchanges[0].send_by_key(
                 message_protocol.internal.serialize(output), str(routing_key)
             )
@@ -98,7 +101,7 @@ class CurrencyFilter:
                     % self.filter_q_amounts[1]
                 )
             )  # Usamos el banco y la cantidad de filtros Q2 para routear  las transacciones del mismo banco siempre al mismo nodo
-            logging.info(f"routing key for Q2 {routing_key}")
+            logging.debug(f"routing key for Q2 {routing_key}")
             self.output_exchanges[1].send_by_key(
                 message_protocol.internal.serialize(output), routing_key
             )
@@ -109,22 +112,24 @@ class CurrencyFilter:
                 "account": transaction["account"],
                 "amount_paid": transaction["amount_paid"],
                 "timestamp": transaction["timestamp"],
-                "payment_format":  transaction["payment_format"]
+                "payment_format":  transaction["payment_format"],
+                "from_bank":transaction["from_bank"]
             }
             routing_key = (
                 self.filter_q_prefixes[2]
                 + str(
-                    zlib.crc32(output["payment_format"].encode("utf-8"))
+                    zlib.crc32(output["account"].encode("utf-8"))
                     % self.filter_q_amounts[2]
                 )
             )  # Usamos el banco y la cantidad de filtros Q2 para routear  las transacciones del mismo banco siempre al mismo nodo
-            logging.info(f"routing key for Q3 {routing_key}")
+            logging.debug(f"routing key for Q3 {routing_key}")
             self.output_exchanges[2].send_by_key(
                 message_protocol.internal.serialize(output), routing_key
             )
 
     def _send_to_date_filter(self, transaction):
         if transaction["payment_currency"] == "US Dollar":
+            self.counter +=1
             routing_key = (
                 FILTER_DATE_PREFIX
                 + str(
@@ -132,13 +137,13 @@ class CurrencyFilter:
                     % FILTER_DATE_AMOUNT
                 )
             ) 
-            logging.info(f"routing key for date {routing_key}")
+            logging.debug(f"routing key for date {routing_key}")
             self.date_filter_exchange.send_by_key(
                 message_protocol.internal.serialize(transaction), routing_key
             )
 
     def _process_eof(self, deserialized_message):
-        logging.info("sending eof to next node")
+        logging.debug("sending eof to next node")
         for i, output_exchange in enumerate(self.output_exchanges):
             output_exchange.send_by_key(
                 message_protocol.internal.serialize(
@@ -146,6 +151,7 @@ class CurrencyFilter:
                 ),
                 self.filter_q_prefixes[i],
             )
+        logging.warning(f"{self.counter} passed the filter")
         self.date_filter_exchange.send_by_key(
                 message_protocol.internal.serialize(
                     {"nodo_id": ID, "client_id": deserialized_message[0]}
@@ -175,7 +181,7 @@ class CurrencyFilter:
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
     dollar_amt_filter = CurrencyFilter()
     signal.signal(
         signal.SIGTERM,

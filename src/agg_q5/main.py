@@ -38,6 +38,9 @@ class AggregatorQ5:
                 message_protocol.internal.serialize([client_id, "q5", [{"count": count}]])
             )
             del self.worker_finished_with_client[client_id]
+            self.output_queue.send(
+                message_protocol.internal.serialize([client_id, "q5"])
+            )
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
@@ -61,7 +64,7 @@ class AggregatorQ5:
 
 def main():
     try:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.INFO)
         aggregator = AggregatorQ5()
         signal.signal(
             signal.SIGTERM,

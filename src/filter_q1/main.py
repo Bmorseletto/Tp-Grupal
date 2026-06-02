@@ -29,7 +29,9 @@ class DollarAmtFilter:
         if transaction["amount_paid"] < 50:
             output = {
                 "client_id": transaction["client_id"],
+                "from_bank":transaction.get("from_bank", ""),
                 "account": transaction["account"],
+                "to_bank":transaction.get("to_bank", ""),
                 "to_account": transaction["to_account"],
                 "amount_paid": transaction["amount_paid"],
             }
@@ -57,7 +59,10 @@ class DollarAmtFilter:
         ack()
 
     def start(self):
-        self.input_exchange.start_consuming(self.process_messsage)
+        try:
+            self.input_exchange.start_consuming(self.process_messsage)
+        except Exception as e:
+            logging.exception(f"Error consuming messages: {e}")
 
     def stop(self):
         logging.info(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
