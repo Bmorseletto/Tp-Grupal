@@ -35,8 +35,9 @@ def main():
 
         # 4. Filtrar el segundo archivo basándose en los IDs del chunk actual
         # Usamos .isin() para extraer solo las filas relacionadas
-        m = chunk_main.columns.str.contains(args.join_on)
-        ids_in_chunk = chunk_main[chunk_main.columns[m]].to_numpy().flatten()
+        # m = chunk_main.columns.str.contains(args.join_on)
+        # ids_in_chunk = chunk_main[chunk_main.columns[m]].to_numpy().flatten()
+        ids_in_chunk = chunk_main[args.join_on]
         chunk_related = df_related[df_related["Account Number"].isin(ids_in_chunk)]
 
         # 5. Guardar ambos

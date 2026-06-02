@@ -2,72 +2,58 @@ import os
 import csv
 import fcntl
 
-COMPONENTS_FILE = "/output/q4_graph_components.csv"
-
+# Estructura DSU simple en memoria
+class DSU:
+    def __init__(self):
+        self.parent = {}
+    def find(self, i):
+        if i not in self.parent: self.parent[i] = i
+        if self.parent[i] == i: return i
+        self.parent[i] = self.find(self.parent[i])
+        return self.parent[i]
+    def union(self, i, j, target="A"):
+        root_i, root_j = self.find(i), self.find(j)
+        
+        if root_i == target:
+            self.parent[root_j] = root_i
+            return root_i
+        elif root_j == target:
+            self.parent[root_i] = root_j
+            return root_j
+        else:
+            self.parent[root_i] = root_j
+            return root_j
 
 class GraphRouterCSV:
-    # Arma nodos y componentes para agrupar los pares bancos-cuentas de un mismo flujo: A->B->C
-    # Osea: matcheamos con banco-cuenta origen y banco-cuenta destino y asi tenemos flujo completo
     def __init__(self, num_nodes):
         self.num_nodes = num_nodes
-        os.makedirs(os.path.dirname(COMPONENTS_FILE), exist_ok=True)
-        if not os.path.exists(COMPONENTS_FILE):
-            with open(COMPONENTS_FILE, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=["rep", "comp_id"])
-                writer.writeheader()
+        self.dsu = DSU()
+        self.log_file = "/output/uniones.csv"
+        self._load_from_log() 
 
-    def _load_components(self):
-        components = {}
-        with open(COMPONENTS_FILE, "r", newline="") as f:
-            fcntl.flock(f, fcntl.LOCK_SH)
-            reader = csv.DictReader(f)
-            for row in reader:
-                components[row["rep"]] = int(row["comp_id"])
-            fcntl.flock(f, fcntl.LOCK_UN)
-        return components
+    def _load_from_log(self):
+        if os.path.exists(self.log_file):
+            with open(self.log_file, "r") as f:
+                fcntl.flock(f, fcntl.LOCK_SH)
+                try:
+                    reader = csv.reader(f)
+                    for row in reader:
+                        if row: self.dsu.union(row[0], row[1])
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
 
-    def _rewrite_components(self, components):
-        # Reescribe todo el CSV con el dict actualizado
-        with open(COMPONENTS_FILE, "w", newline="") as f:
+    def get_node(self, client_id,to_bank, to_account, from_bank, from_account):
+        rep_to = f"{to_bank}:{to_account}" #A
+        rep_fr = f"{from_bank}:{from_account}" #B
+        
+        root = self.dsu.union(rep_fr, rep_to)
+        
+        with open(self.log_file, "a", newline="") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
-            writer = csv.DictWriter(f, fieldnames=["rep", "comp_id"])
-            writer.writeheader()
-            for rep, comp_id in components.items():
-                writer.writerow({"rep": rep, "comp_id": comp_id})
-            fcntl.flock(f, fcntl.LOCK_UN)
-
-    def get_node(self, to_bank, to_account, from_bank, from_account):
-        rep_to = f"{to_bank}:{to_account}"
-        rep_fr = f"{from_bank}:{from_account}"
-        components = self._load_components()
-
-        if rep_to not in components and rep_fr not in components:
-            # nuevo componente
-            comp_id = len(components)
-            components[rep_to] = comp_id
-            components[rep_fr] = comp_id
-            self._rewrite_components(components)
-        elif rep_to in components and rep_fr not in components:
-            comp_id = components[rep_to]
-            components[rep_fr] = comp_id
-            self._rewrite_components(components)
-        elif rep_fr in components and rep_to not in components:
-            comp_id = components[rep_fr]
-            components[rep_to] = comp_id
-            self._rewrite_components(components)
-        else:
-            # ambos existen: si tienen comp_id distinto, unificar
-            comp_id_to = components[rep_to]
-            comp_id_fr = components[rep_fr]
-            if comp_id_to != comp_id_fr:
-                # normalizar: todos los reps con comp_id_fr pasan a comp_id_to
-                for rep, cid in components.items():
-                    if cid == comp_id_fr:
-                        components[rep] = comp_id_to
-                comp_id = comp_id_to
-                self._rewrite_components(components)
-            else:
-                comp_id = comp_id_to
-
-        routing_key = "Q4Graph" + str(comp_id % self.num_nodes)
-        return routing_key
+            try:
+                writer = csv.writer(f)
+                writer.writerow([rep_fr, rep_to])
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+            
+        return f"Q4Graph{hash(root) % self.num_nodes}"

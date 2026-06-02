@@ -62,7 +62,6 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-      - INPUT_QUEUE=join_results_queue
       - OUTPUT_QUEUE=Query2_Aggregator_accounts
       - MOM_HOST=rabbitmq
       - PYTHONUNBUFFERED=1
@@ -70,6 +69,10 @@ services:
       - SERVER_PORT=5678
       - AMOUNT_CURRENCY=2
       - CURRENCY_PREFIX=CurrencyFilter
+      - Q5_PREFIX=DateFilterQ5
+      - AMOUNT_Q5=1
+      - QUERY_AMOUNT=5
+      - RESULT_QUEUES=Gateway_Q1_Results,Gateway_Q2_Results,Gateway_Q3_Results,Gateway_Q4_Results,Gateway_Q5_Results
   currency_filter_0:
     build:
       context: ./src/
@@ -77,6 +80,11 @@ services:
     container_name: currency_filter_0
     depends_on:
       - dollar_amount_filter_0
+      - max_transaction_filter_0
+      - max_transaction_filter_1
+      - date_filter_0
+      - date_filter_1
+      - query_3_date_filter_0
       - dollar_amount_filter_1
       - dollar_amount_filter_2
     environment:
@@ -91,7 +99,7 @@ services:
       - FILTER_Q2_PREFIX=MaxTransactionFilter
       - FILTER_Q3_AMOUNT=1
       - FILTER_Q3_PREFIX=DateFilterQ3
-      - FILTER_DATE_AMOUNT=1
+      - FILTER_DATE_AMOUNT=2
       - FILTER_DATE_PREFIX=DateFilter
       - PYTHONUNBUFFERED=1
   currency_filter_1:
@@ -101,6 +109,11 @@ services:
     container_name: currency_filter_1
     depends_on:
       - dollar_amount_filter_0
+      - max_transaction_filter_0
+      - max_transaction_filter_1
+      - date_filter_0
+      - date_filter_1
+      - query_3_date_filter_0
       - dollar_amount_filter_1
       - dollar_amount_filter_2
     environment:
@@ -115,9 +128,8 @@ services:
       - FILTER_Q2_PREFIX=MaxTransactionFilter
       - FILTER_Q3_AMOUNT=1
       - FILTER_Q3_PREFIX=DateFilterQ3
-      - FILTER_DATE_AMOUNT=1
+      - FILTER_DATE_AMOUNT=2
       - FILTER_DATE_PREFIX=DateFilter
-      - PYTHONUNBUFFERED=1
       - PYTHONUNBUFFERED=1
   dollar_amount_filter_0:
     build:
@@ -170,12 +182,12 @@ services:
       dockerfile: agg_q1/Dockerfile
     container_name: query_1_aggregator
     depends_on:
-      - join
+      - gateway
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
       - INPUT_QUEUE=Query1_Aggregator
-      - OUTPUT_QUEUE=Join_Q1_Results
+      - OUTPUT_QUEUE=Gateway_Q1_Results
       - Q1_FILTER_AMOUNT=3
       - Q1_FILTER_PREFIX=DollarAmtFilter
       - PYTHONUNBUFFERED=1
@@ -187,13 +199,13 @@ services:
       dockerfile: agg_q2/Dockerfile
     container_name: query_2_aggregator
     depends_on:
-      - join
+      - gateway
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
       - ACCOUNTS_FILE=/datasets/LI-Small_accounts.csv
       - INPUT_QUEUE=Query2_Aggregator
-      - OUTPUT_QUEUE=Join_Q2_Results
+      - OUTPUT_QUEUE=Gateway_Q2_Results
       - Q2_FILTER_AMOUNT=2
       - Q2_FILTER_PREFIX=MaxTransactionFilter
       - PYTHONUNBUFFERED=1
@@ -214,7 +226,7 @@ services:
       - ID=0
       - MOM_HOST=rabbitmq
       - INPUT_QUEUE=Query3_Aggregator
-      - OUTPUT_QUEUE=Join_Q3_Results
+      - OUTPUT_QUEUE=Gateway_Q3_Results
       - Q3_FILTER_AMOUNT=2
       - Q3_FILTER_PREFIX=AvgFilter
       - PYTHONUNBUFFERED=1
@@ -418,20 +430,6 @@ services:
       - FILTER_AMOUNT=2
       - FILTER_PREFIX=MaxTransactionFilter
       - UPSTREAM_AMOUNT=2
-      - PYTHONUNBUFFERED=1
-  join:
-    build:
-      context: ./src/
-      dockerfile: join/Dockerfile
-    container_name: join
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    environment:
-      - MOM_HOST=rabbitmq
-      - INPUT_QUEUES=Join_Q1_Results,Join_Q2_Results,Join_Q3_Results
-      - OUTPUT_QUEUE=join_results_queue
-      - QUERY_AMOUNT=3
       - PYTHONUNBUFFERED=1
   rabbitmq:
     build:

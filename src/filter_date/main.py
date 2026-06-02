@@ -42,14 +42,16 @@ class DateFilter:
             )
             for i in range(len(self.outputs_prefix))
         ]
-
+        self.counter = 0
+        self.counter2 = 0
         self.eof_count = {}
+        self.graph_router = None
         logging.info(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
         logging.info(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
         logging.info(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
 
     def _process_data(self, transaction):
-        
+        self.counter2 +=1
         transaction_timestamp=datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M").replace(hour=0, minute=0, second=0, microsecond=0)
         initial_date = datetime.strptime(INITIAL_DATE, "%Y/%m/%d")
         end_date = datetime.strptime(END_DATE, "%Y/%m/%d")
@@ -57,19 +59,19 @@ class DateFilter:
         logging.debug(f"date comp: {initial_date <= transaction_timestamp <= end_date}")
 
         if initial_date <= transaction_timestamp <= end_date:
+            self.counter +=1
             for i in range(len(self.output_exchanges)):
-                logging.info(f"ROUTING_HASH_TARGET I: {self.routing_hash_targets[i]}")
+                logging.debug(f"ROUTING_HASH_TARGET I: {self.routing_hash_targets[i]}")
                 if '+' in self.routing_hash_targets[i]:
-                    self.graph_router = GraphRouterCSV(self.outputs_amounts[i])
-                     # QUERY 4
-                    routing_key_q4 = self.graph_router.get_node(
-                        transaction.get("to_bank", ""),
-                        transaction.get("to_account", ""),
-                        transaction.get("from_bank", ""),
-                        transaction.get("account", "")
-                    )
+                    routing_key = (
+                        self.outputs_prefix[i]
+                        + str(
+                            zlib.crc32(f"{transaction["from_bank"]}:{transaction["account"]}".encode("utf-8"))
+                            % self.outputs_amounts[i]
+                            )
+                        )
                     self.output_exchanges[i].send_by_key(
-                        message_protocol.internal.serialize(transaction), routing_key_q4
+                        message_protocol.internal.serialize(transaction), routing_key
                     )
                 else:
                     routing_key = (
@@ -79,8 +81,8 @@ class DateFilter:
                         % self.outputs_amounts[i]
                         )
                     )
-                    logging.info(f"SENDING transaction {transaction}")
-                    logging.debug(f"Routing transaction {transaction} to output exchange with routing key {routing_key}")
+                    # logging.debug(f"SENDING transaction {transaction}")
+                    # logging.info(f"Routing transaction {transaction} to output exchange with routing key {routing_key}")
                     self.output_exchanges[i].send_by_key(
                         message_protocol.internal.serialize(transaction), routing_key
                         )
@@ -91,6 +93,8 @@ class DateFilter:
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         if self.eof_count[client_id] < UPSTREAM_AMOUNT:
             return
+        logging.info(f"{self.counter} passed the filter")
+        logging.info(f"{self.counter2} total messages")
         for i, output_exchange in enumerate(self.output_exchanges):
             output_exchange.send_by_key(
                 message_protocol.internal.serialize(
@@ -100,20 +104,25 @@ class DateFilter:
             )
 
     def process_messsage(self, message, ack, nack):
-        deserialized_message = message_protocol.internal.deserialize(message)
-        logging.info(f"MESSAGE {deserialized_message}")
-        if len(deserialized_message) == 2:
-            self._process_eof(deserialized_message)
-        else:    
-            self._process_data(deserialized_message)
-        ack()
+        try:
+            deserialized_message = message_protocol.internal.deserialize(message)
+            logging.debug(f"MESSAGE {deserialized_message}")
+            if len(deserialized_message) == 2:
+                self._process_eof(deserialized_message)
+            else:    
+                self._process_data(deserialized_message)
+            ack()
+        except:
+            logging.info(f"MESSAGE {deserialized_message} error")
+            nack()
+        
 
     def start(self):
         self.input_exchange.start_consuming(self.process_messsage)
 
     
     def stop(self):
-        logging.info(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
+        logging.debug(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
         self.input_exchange.stop_consuming()
     def close(self):
         self.input_exchange.close()
