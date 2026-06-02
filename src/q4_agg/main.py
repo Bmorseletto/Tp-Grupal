@@ -20,28 +20,22 @@ class AggregatorQ4:
             MOM_HOST, OUTPUT_QUEUE
         )
         self.worker_finished_with_client = {}
+        self.results = {}
 
     def _process_data(self, result):
         try:
+            #logging.info(f"PROCESSING DATA: {result}")
             client_id = result.get("client_id")
-            if client_id is None:
-                return
-
-            path = RESULTS_STORAGE + f"{client_id}.csv"
-            write_header = not os.path.exists(path)
-
-            with open(path, "a", newline="") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=["origin_bank","origin_account","destinations"])
-                if write_header:
-                    writer.writeheader()
-                writer.writerow({
-                    "origin_bank": result.get("origin_bank"),
-                    "origin_account": result.get("origin_account"),
-                    "destinations": result.get("destinations", {})
-                })
-            #logging.info(f"writing result for client {client_id} down")
+            sus_accounts = result.get("suspicious_accounts")
+            if client_id not in  self.results.keys():
+                self.results[client_id] = {}
+            for account, final_accounts in sus_accounts.items():
+                if account not in self.results[client_id].keys():
+                    self.results[client_id][account] = {}
+                for final_account, transaction_amount in final_accounts.items():
+                    self.results[client_id][account][final_account]=self.results[client_id][account].get(final_account, 0) + transaction_amount
         except Exception as e:
-            logging.error(f"ERROR: {e}")
+            logging.error(f"PROCESS DATA ERROR: {e}")
 
     def _process_eof(self, eof_message):
         try:
@@ -55,30 +49,27 @@ class AggregatorQ4:
             if len(self.worker_finished_with_client[client_id]) == Q4_SCATTER_AMOUNT:
                 path = RESULTS_STORAGE + f"{client_id}.csv"
                 results = []
-                if os.path.isfile(RESULTS_STORAGE+f"{client_id}.csv"):
-                    with open(path, "r", newline="") as csvfile:
-                        reader = csv.DictReader(csvfile)
-                        for row in reader:
-                            values = {
-                                "origin_bank": row["origin_bank"],
-                                "origin_account": row["origin_account"],
-                                "destinations": eval(row["destinations"])
+                for account, final_accounts in self.results[client_id].items():
+                    for final_account, transaction_amount in final_accounts.items():
+                        origin = account.split(',')
+                        dest =final_account.split(',')
+                        if transaction_amount >= 5:
+                            message = {
+                                "from_bank":origin[0],
+                                "from_account":origin[1],
+                                "to_bank" : dest[0],
+                                "to_account":dest[1]
                             }
-                            for destination in values["destinations"].keys():
-                                destination=dict(item.split('=') for item in destination.split())
-                                self.output_queue.send(message_protocol.internal.serialize([client_id, "q4",[destination]]))
-                            self.output_queue.send(message_protocol.internal.serialize([client_id, "q4",[values]]))
-                            logging.info(f"sending result: {values}")
-                    os.remove(path)
+                            self.output_queue.send(message_protocol.internal.serialize([client_id, "q4", [message]]))
                 self.output_queue.send(message_protocol.internal.serialize([client_id, "q4"]))
                 logging.info(f"Q4 RESULTS SENT for client {client_id}")
         except Exception as e:
-            logging.error(f"ERROR: {e}")
+            logging.error(f"EOF ERROR: {e}")
 
     def process_message(self, message, ack, nack):
         deserialized = message_protocol.internal.deserialize(message)
         #logging.info(f"MESSAGE: {deserialized}")
-        if len(deserialized) == 2:  # EOF
+        if "nodo_id" in deserialized.keys():  # EOF
             self._process_eof(deserialized)
         else:
             self._process_data(deserialized)

@@ -63,18 +63,15 @@ class DateFilter:
             for i in range(len(self.output_exchanges)):
                 logging.debug(f"ROUTING_HASH_TARGET I: {self.routing_hash_targets[i]}")
                 if '+' in self.routing_hash_targets[i]:
-                    if self.graph_router == None:
-                        self.graph_router = GraphRouterCSV(self.outputs_amounts[i])
-                     # QUERY 4
-                    routing_key_q4 = self.graph_router.get_node(
-                        transaction.get("client_id", ""),
-                        transaction.get("to_bank", ""),
-                        transaction.get("to_account", ""),
-                        transaction.get("from_bank", ""),
-                        transaction.get("account", "")
-                    )
+                    routing_key = (
+                        self.outputs_prefix[i]
+                        + str(
+                            zlib.crc32(f"{transaction["from_bank"]}:{transaction["account"]}".encode("utf-8"))
+                            % self.outputs_amounts[i]
+                            )
+                        )
                     self.output_exchanges[i].send_by_key(
-                        message_protocol.internal.serialize(transaction), routing_key_q4
+                        message_protocol.internal.serialize(transaction), routing_key
                     )
                 else:
                     routing_key = (

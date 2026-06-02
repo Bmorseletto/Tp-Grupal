@@ -11,19 +11,25 @@ class DSU:
         if self.parent[i] == i: return i
         self.parent[i] = self.find(self.parent[i])
         return self.parent[i]
-    def union(self, i, j):
+    def union(self, i, j, target="A"):
         root_i, root_j = self.find(i), self.find(j)
-        if root_i != root_j:
+        
+        if root_i == target:
+            self.parent[root_j] = root_i
+            return root_i
+        elif root_j == target:
             self.parent[root_i] = root_j
             return root_j
-        return root_i
+        else:
+            self.parent[root_i] = root_j
+            return root_j
 
 class GraphRouterCSV:
     def __init__(self, num_nodes):
         self.num_nodes = num_nodes
         self.dsu = DSU()
         self.log_file = "/output/uniones.csv"
-        self._load_from_log() # Solo se hace al inicio
+        self._load_from_log() 
 
     def _load_from_log(self):
         if os.path.exists(self.log_file):
@@ -37,13 +43,11 @@ class GraphRouterCSV:
                     fcntl.flock(f, fcntl.LOCK_UN)
 
     def get_node(self, client_id,to_bank, to_account, from_bank, from_account):
-        rep_to = f"{client_id}:{to_bank}:{to_account}"
-        rep_fr = f"{client_id}:{from_bank}:{from_account}"
+        rep_to = f"{to_bank}:{to_account}" #A
+        rep_fr = f"{from_bank}:{from_account}" #B
         
-        # Operación DSU en memoria (ultra rápida)
         root = self.dsu.union(rep_fr, rep_to)
         
-        # Persistencia eficiente (append, no rewrite)
         with open(self.log_file, "a", newline="") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             try:

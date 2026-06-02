@@ -40,29 +40,30 @@ class GraphFilter:
         origin_bank = transaction.get("from_bank")
         destination_account = transaction.get("to_account")
         destination_bank = transaction.get("to_bank")
-        try:
-            amount = float(transaction.get("amount_paid", 0))
-        except (TypeError, ValueError):
-            amount = 0.0
 
-        origin_key = (origin_bank, origin_account)
-        destination_key = (destination_bank, destination_account)
+        origin_key = f"{origin_bank},{origin_account}"
+        destination_key = f"{destination_bank},{destination_account}"
 
         if client_id not in self.origin_groups:
             self.origin_groups[client_id] = defaultdict(
-                lambda: {"transactions": 0, "total_amount": 0.0, "destinations": {}}
+                lambda: {"destinations": {}}
             )
             self.destination_groups[client_id] = defaultdict(
-                lambda: {"transactions": 0, "total_amount": 0.0, "origins": {}}
+                lambda: {"transactions": {}}
             )
 
-        origin_data = self.origin_groups[client_id][origin_key]
-        origin_data["transactions"] += 1
-        origin_data["total_amount"] += amount
+        origin_data = self.origin_groups[client_id][origin_key]["destinations"]
+        destination_data =  self.destination_groups[client_id][destination_key]["transactions"]
         if destination_account is not None or destination_bank is not None:
-            self.origin_groups[client_id][origin_key]["destinations"][destination_key] = (
-                origin_data["destinations"].get(destination_key, 0) + 1
-            )
+            if destination_key not in origin_data.keys():
+                origin_data[destination_key] = (
+                    {"account": origin_account, "from_bank": origin_bank, "to_account": destination_account, "to_bank": destination_bank}
+                )
+            if origin_key not in destination_data.keys():
+                destination_data[origin_key] = (
+                    {"account": origin_account, "from_bank": origin_bank, "to_account": destination_account, "to_bank": destination_bank}
+                )
+            
 
     def _process_eof(self, deserialized_message):
         client_id = deserialized_message.get("client_id")
@@ -72,8 +73,25 @@ class GraphFilter:
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         if self.eof_count[client_id] < FILTER_DATE_AMOUNT:
             return
-
-        self._print_results(client_id)
+        #logging.info(f"self.origin_groups {self.origin_groups}")
+        #self._print_results(client_id)
+        if client_id in self.origin_groups.keys():
+            for  origin_key, data2 in self.origin_groups[client_id].items():
+                if len(data2["destinations"].keys()) >= 5:
+                    self.output_exchange.send_by_key(
+                        message_protocol.internal.serialize(
+                            {"client_id": client_id, "origin_account": origin_key, "transactions": data2["destinations"]}
+                        ),
+                        OUTPUT_PREFIX,
+                    )
+            for destination_key, data2 in self.destination_groups[client_id].items():
+                routing_key=self._get_output_routing_key(destination_key[0], destination_key[1])
+                self.output_exchange.send_by_key(
+                    message_protocol.internal.serialize(
+                        {"client_id": client_id, "destination_account": destination_key, "transactions": data2["transactions"]}
+                    ),
+                    routing_key,
+                )
         self.output_exchange.send_by_key(
             message_protocol.internal.serialize(
                 {"nodo_id": ID, "client_id": client_id}
@@ -141,10 +159,9 @@ class GraphFilter:
                 "total_amount": data["total_amount"],
                 "destinations": formatted_edges,
             }
-            if result["origin_account"] == "804070470":  
-                logging.info(
-                    f"Transaction info:  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={formatted_edges}"
-                )
+            #logging.info(
+            #    f"Transaction info:  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={formatted_edges}"
+            #)
             self._send_result(result, origin[0], origin[1])
 
     def process_messsage(self, message, ack, nack):

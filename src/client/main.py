@@ -139,7 +139,7 @@ class Client:
                             csv_writer.writerow(["From Bank","Account","Amount Paid","Payment Format"])
                         if query_id == "q4":
                             csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-                            csv_writer.writerow(["From Bank","Account","Destinations"])
+                            csv_writer.writerow(["From Bank","From Account","To Bank", "To Account"])
             for query_id, query_results in payload.items():
                 with open(filepath.with_name(f"{query_id}_{name}"), "a") as csvfile:
                     csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
