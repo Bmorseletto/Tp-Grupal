@@ -9,9 +9,7 @@ MOM_HOST = os.environ["MOM_HOST"]
 SCATTER_DETECTOR_PREFIX = os.environ["SCATTER_DETECTOR_PREFIX"]
 OUTPUT_PREFIX = os.environ["OUTPUT_PREFIX"]
 OUTPUT_AMOUNT = int(os.environ["OUTPUT_AMOUNT"])
-SCATTER_VALUE = int(os.environ["SCATTER_VALUE"])
 Q4_GRAPH_AMOUNT = int(os.environ["Q4_GRAPH_AMOUNT"])
-SCATTER_DETECTOR_STORAGE = "/output/q4_scatter_"
 
 class ScatterGatherDetector:
     def __init__(self):
@@ -44,12 +42,16 @@ class ScatterGatherDetector:
             return
 
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
-        #logging.info(f"EOF recibido de GraphFilter para client {client_id} ({self.eof_count[client_id]}/{Q4_GRAPH_AMOUNT})")
 
         if self.eof_count[client_id] < Q4_GRAPH_AMOUNT:
             return
 
-        #self._print_and_send(client_id)
+        # final_dict = {
+        #   (origin_bank, origin_account): {
+        #       (destination_bank_1, destination_account_1): <amount of transactions>,
+        #       (destination_bank_2, destination_account_2): <amount of transactions>
+        #   }
+        # }
         final_dict = {}
         if client_id in self.accounts.keys():
             for account, transactions in self.suspicious_accounts[client_id].items():
@@ -68,33 +70,8 @@ class ScatterGatherDetector:
         self.results.pop(client_id, None)
         self.eof_count.pop(client_id, None)
 
-    def _print_and_send(self, client_id):
-        #logging.info(f"Scatter-Gather results for client {client_id}")
-
-        for result in self.results.get(client_id, []):
-            destinations = result.get("destinations", {})
-            valid_destinations = {dest: count for dest, count in destinations.items() if count >= SCATTER_VALUE}
-            if not valid_destinations:
-                continue
-
-            #logging.info(f"* bank={result['origin_bank']} account={result['origin_account']} destinations={valid_destinations}")
-
-            filtered_result = {
-                "client_id": client_id,
-                "origin_bank": result["origin_bank"],
-                "origin_account": result["origin_account"],
-                "destinations": valid_destinations
-            }
-            self.output_queue.send(message_protocol.internal.serialize(filtered_result))
-
-        # EOF
-        self.output_queue.send( message_protocol.internal.serialize(
-            {"nodo_id": ID, "client_id": client_id}
-        ))
-
     def process_message(self, message, ack, nack):
         deserialized = message_protocol.internal.deserialize(message)
-        #logging.info(f"MESSAGE {deserialized}")
         if len(deserialized) == 2:
             self._process_eof(deserialized)
         elif "origin_account" in deserialized.keys():

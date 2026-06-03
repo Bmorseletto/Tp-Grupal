@@ -6,7 +6,6 @@ import signal
 import zlib
 
 from common import middleware, message_protocol
-from graph_router import GraphRouterCSV
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -45,9 +44,6 @@ class DateFilter:
         self.counter = 0
         self.counter2 = 0
         self.eof_count = {}
-        self.graph_router = None
-        logging.info(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
-        logging.info(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
         logging.info(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
 
     def _process_data(self, transaction):

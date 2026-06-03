@@ -13,6 +13,7 @@ OUTPUT_PREFIX = os.environ["OUTPUT_PREFIX"]
 OUTPUT_AMOUNT = int(os.environ["OUTPUT_AMOUNT"])
 FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
 FILTER_DATE_AMOUNT = int(os.environ["FILTER_DATE_AMOUNT"])
+SCATTER_VALUE = int(os.environ["SCATTER_VALUE"])
 
 
 class GraphFilter:
@@ -29,7 +30,25 @@ class GraphFilter:
         )
         self.eof_count = {}
         self.origin_groups = {}
+        # {client_id: {
+        #   (origin_bank, origin_account): {
+        #       "destinations": {
+        #           (dest_bank, dest_account):
+        #               account, from_bank, to_account, to_bank
+        #           }
+        #       }
+        #   }
+        # }
         self.destination_groups = {}
+        # {client_id: {
+        #   (dest_bank, dest_account): {
+        #       "transactions": {
+        #           (dest_bank, dest_account):
+        #               account, from_bank, to_account, to_bank
+        #           }
+        #       }
+        #   }
+        # }
 
     def _process_data(self, transaction):
         client_id = transaction.get("client_id")
@@ -56,10 +75,12 @@ class GraphFilter:
         destination_data =  self.destination_groups[client_id][destination_key]["transactions"]
         if destination_account is not None or destination_bank is not None:
             if destination_key not in origin_data.keys():
+                # No se admiten repetidos
                 origin_data[destination_key] = (
                     {"account": origin_account, "from_bank": origin_bank, "to_account": destination_account, "to_bank": destination_bank}
                 )
             if origin_key not in destination_data.keys():
+                # No se admiten repetidos
                 destination_data[origin_key] = (
                     {"account": origin_account, "from_bank": origin_bank, "to_account": destination_account, "to_bank": destination_bank}
                 )
@@ -73,11 +94,11 @@ class GraphFilter:
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         if self.eof_count[client_id] < FILTER_DATE_AMOUNT:
             return
-        #logging.info(f"self.origin_groups {self.origin_groups}")
-        #self._print_results(client_id)
         if client_id in self.origin_groups.keys():
             for  origin_key, data2 in self.origin_groups[client_id].items():
-                if len(data2["destinations"].keys()) >= 5:
+                if len(data2["destinations"].keys()) >= SCATTER_VALUE:
+                    # Se hace un broadcast de todas las cuentas sospechosas (las que le enviaron
+                    # dinero a >=5 cuentas distintas)
                     self.output_exchange.send_by_key(
                         message_protocol.internal.serialize(
                             {"client_id": client_id, "origin_account": origin_key, "transactions": data2["destinations"]}
@@ -85,6 +106,7 @@ class GraphFilter:
                         OUTPUT_PREFIX,
                     )
             for destination_key, data2 in self.destination_groups[client_id].items():
+                # Se rutea en base al destino (to_bank y to_account)
                 routing_key=self._get_output_routing_key(destination_key[0], destination_key[1])
                 self.output_exchange.send_by_key(
                     message_protocol.internal.serialize(
@@ -116,57 +138,12 @@ class GraphFilter:
 
     def _send_result(self, result, bank, account):
         routing_key = self._get_output_routing_key(bank, account)
-        #logging.info(f"Sending to routing key: {routing_key} | results: {result}")
         self.output_exchange.send_by_key(
             message_protocol.internal.serialize(result), routing_key
         )
 
-    def _get_second_level_destinations(self, client_id, origin_key):
-        direct_destinations = self.origin_groups[client_id][origin_key]["destinations"]
-        second_level = {}
-        for dest_key, direct_count in direct_destinations.items():
-            if dest_key == origin_key:
-                continue
-            dest_origin_data = self.origin_groups[client_id].get(dest_key)
-            if not dest_origin_data:
-                continue
-            for next_dest_key, next_count in dest_origin_data["destinations"].items():
-                if next_dest_key == origin_key:
-                    continue
-                if next_dest_key == dest_key:
-                    continue
-                second_level[next_dest_key] = second_level.get(next_dest_key, 0) + (
-                    direct_count * next_count
-                )
-        return second_level
-
-    def _print_results(self, client_id):
-        origins = self.origin_groups.get(client_id, {})
-
-        #logging.info(f"Q4 Graph results for client {client_id}")
-        #print(f"Q4 Graph results for client {client_id}")
-        #print("Accounts with second level transactions:")
-        for origin, data in origins.items():
-            second_level_destinations = self._get_second_level_destinations(client_id, origin)
-            if not second_level_destinations:
-                continue
-            formatted_edges = self._format_edges(second_level_destinations)
-            result = {
-                "client_id": client_id,
-                "origin_bank": origin[0],
-                "origin_account": origin[1],
-                "transactions": data["transactions"],
-                "total_amount": data["total_amount"],
-                "destinations": formatted_edges,
-            }
-            #logging.info(
-            #    f"Transaction info:  {self._format_node(origin)} transactions={data['transactions']} total_amount={data['total_amount']} destinations={formatted_edges}"
-            #)
-            self._send_result(result, origin[0], origin[1])
-
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
-        #logging.info(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)
         else:

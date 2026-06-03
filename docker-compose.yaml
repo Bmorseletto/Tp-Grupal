@@ -531,8 +531,6 @@ services:
       - query_4_graph_0
       - query_4_graph_1
       - query_4_graph_2
-    volumes:
-      - ./output:/output
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
@@ -557,8 +555,6 @@ services:
       - query_4_graph_0
       - query_4_graph_1
       - query_4_graph_2
-    volumes:
-      - ./output:/output
     environment:
       - ID=1                    # Nuevo ID
       - MOM_HOST=rabbitmq
@@ -614,6 +610,7 @@ services:
       - OUTPUT_PREFIX=Q4GScatterDetector
       - OUTPUT_AMOUNT=3
       - FILTER_DATE_AMOUNT=3
+      - SCATTER_VALUE=5
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
@@ -635,6 +632,7 @@ services:
       - OUTPUT_PREFIX=Q4GScatterDetector
       - OUTPUT_AMOUNT=3
       - FILTER_DATE_AMOUNT=3
+      - SCATTER_VALUE=5
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
@@ -655,6 +653,7 @@ services:
       - OUTPUT_PREFIX=Q4GScatterDetector
       - OUTPUT_AMOUNT=3
       - FILTER_DATE_AMOUNT=3
+      - SCATTER_VALUE=5
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
@@ -673,7 +672,6 @@ services:
       - OUTPUT_PREFIX=Q4Agg
       - OUTPUT_AMOUNT=1
       - Q4_GRAPH_AMOUNT=3
-      - SCATTER_VALUE=5
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
@@ -692,7 +690,6 @@ services:
       - OUTPUT_PREFIX=Q4Agg
       - OUTPUT_AMOUNT=1
       - Q4_GRAPH_AMOUNT=3
-      - SCATTER_VALUE=5
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output
@@ -711,7 +708,6 @@ services:
       - OUTPUT_PREFIX=Q4Agg
       - OUTPUT_AMOUNT=1
       - Q4_GRAPH_AMOUNT=3
-      - SCATTER_VALUE=5
       - PYTHONUNBUFFERED=1
     volumes:
       - ./output:/output

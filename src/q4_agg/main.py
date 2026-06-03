@@ -24,7 +24,6 @@ class AggregatorQ4:
 
     def _process_data(self, result):
         try:
-            #logging.info(f"PROCESSING DATA: {result}")
             client_id = result.get("client_id")
             sus_accounts = result.get("suspicious_accounts")
             if client_id not in  self.results.keys():
@@ -68,7 +67,6 @@ class AggregatorQ4:
 
     def process_message(self, message, ack, nack):
         deserialized = message_protocol.internal.deserialize(message)
-        #logging.info(f"MESSAGE: {deserialized}")
         if "nodo_id" in deserialized.keys():  # EOF
             self._process_eof(deserialized)
         else:
