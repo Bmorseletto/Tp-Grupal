@@ -19,6 +19,7 @@ class Client:
 
     def __init__(self):
         self.closed = False
+        self.done = False
         self._socket_lock = threading.Lock()
         self._send_error = None
         self._prev_sigterm_handler = signal.signal(signal.SIGTERM, self.handle_sigterm)
@@ -121,6 +122,7 @@ class Client:
         while True:
             msg_type, payload = message_protocol.external.recv_msg(self.server_socket)
             if msg_type == message_protocol.external.MsgType.END_OF_RESULTS:
+                self.done = True
                 break
             if msg_type != message_protocol.external.MsgType.RESULTS:
                 raise TypeError(f"Unexpected message type: {msg_type}")
@@ -166,32 +168,43 @@ def main() -> int:
     logging.basicConfig(level=logging.WARNING)
     client = Client()
 
-    try:
-        start = datetime.now()
-        client.connect(SERVER_HOST, SERVER_PORT)
+    while True:
+        try:
+            start = datetime.now()
+            client.connect(SERVER_HOST, SERVER_PORT)
 
-        
-        send_thread = threading.Thread(
-            target=send_data,
-            args=(client,),
-            daemon=True,
-        )
-        send_thread.start()
+            send_thread = threading.Thread(
+                target=send_data,
+                args=(client,),
+                daemon=True,
+            )
+            send_thread.start()
 
-        client.recv_results(OUTPUT_FILE)
-        send_thread.join()
-        middle = datetime.now()
-        logging.warning(f"Time elapsed: {middle - start}")
-    except socket.error as e:
-        if not client.closed:
-            logging.error(f"The connection with the server was lost {e}")
-            return 1
-    except Exception:
-        logging.exception("An error occurred while running the client")
-        return 2
-    finally:
-        if not client.closed:
-            client.disconnect()
+            client.recv_results(OUTPUT_FILE)
+            send_thread.join()
+            middle = datetime.now()
+            logging.warning(f"Time elapsed: {middle - start}")
+        except socket.error as e:
+            if not client.closed:
+                logging.error(f"The connection with the server was lost {e}")
+                # try to reconnect
+                for i in range(5):
+                    try:
+                        client.connect(SERVER_HOST, SERVER_PORT)
+                        client.recv_results(OUTPUT_FILE)
+                        break
+                    except socket.error:
+                        logging.error(f"Reconnection attempt {i+1} failed")
+        except Exception:
+            logging.exception("An error occurred while running the client")
+            # return 2
+        finally:
+            if not client.closed:
+                client.disconnect()
+            if send_thread.is_alive():
+                send_thread.join()
+        if client.done:
+            break
 
     return 0
 
