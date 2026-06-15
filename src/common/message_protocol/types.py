@@ -49,3 +49,4 @@ class MsgType:
     RESULTS = 5
     END_OF_ACCOUNTS = 6
     END_OF_RESULTS = 7
+    HEARTBEAT = 8

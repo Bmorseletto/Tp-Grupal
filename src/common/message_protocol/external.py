@@ -95,6 +95,11 @@ def _recv_account_record(socket):
 def _recv_empty(socket):
     return None
 
+def _recv_heartbeat(socket):
+    node_id_size=_recv_sized(socket, external_serializer.UINT32_SIZE)
+    node_id = external_serializer.deserialize_string(_recv_sized(socket, node_id_size))
+    return node_id
+
 def _recv_results(socket):
     query_count = external_serializer.deserialize_uint32(
         _recv_sized(socket, external_serializer.UINT32_SIZE)
@@ -131,7 +136,8 @@ RECV_MSG_HANDLERS = {
     MsgType.END_OF_TRANSACTIONS: _recv_empty,
     MsgType.RESULTS: _recv_results,
     MsgType.END_OF_ACCOUNTS: _recv_empty,
-    MsgType.END_OF_RESULTS: _recv_empty
+    MsgType.END_OF_RESULTS: _recv_empty,
+    MsgType.HEARTBEAT: _recv_heartbeat
 }
 
 
@@ -237,6 +243,11 @@ def _send_results(socket, results):
             msg += _serialize_result_row(result)
     socket.sendall(msg)
 
+def _send_heartbeat(socket, node_id):
+    msg = external_serializer.serialize_uint32(MsgType.HEARTBEAT)
+    msg += external_serializer.serialize_uint32(len(node_id))
+    msg += external_serializer.serialize_string(node_id)
+    socket.sendall(msg)
 
 SEND_MSG_HANDLERS = {
     MsgType.TRANSACTION_RECORD: _send_transaction_record,
@@ -245,7 +256,8 @@ SEND_MSG_HANDLERS = {
     MsgType.END_OF_TRANSACTIONS: _send_end_of_transactions,
     MsgType.RESULTS: _send_results,
     MsgType.END_OF_ACCOUNTS: _send_end_of_accounts,
-    MsgType.END_OF_RESULTS: _send_end_of_results
+    MsgType.END_OF_RESULTS: _send_end_of_results,
+    MsgType.HEARTBEAT: _send_heartbeat
 }
 
 
