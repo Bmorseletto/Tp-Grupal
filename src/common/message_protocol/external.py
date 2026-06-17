@@ -96,7 +96,7 @@ def _recv_empty(socket):
     return None
 
 def _recv_heartbeat(socket):
-    node_id_size=_recv_sized(socket, external_serializer.UINT32_SIZE)
+    node_id_size=external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
     node_id = external_serializer.deserialize_string(_recv_sized(socket, node_id_size))
     return node_id
 

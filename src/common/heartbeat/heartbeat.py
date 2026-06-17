@@ -3,6 +3,7 @@ import socket
 import time
 
 from common import message_protocol
+HEARTBEAT_SLEEP = 2
 
 class Heartbeat:
     def __init__(self, node_id, manager_host,manager_port):
@@ -32,6 +33,6 @@ def _heartbeat(manager_host, manager_port, node_id):
                     message_protocol.external.send_msg(
                         s, message_protocol.external.MsgType.HEARTBEAT, node_id
                     )
-                    time.sleep(5)
+                    time.sleep(HEARTBEAT_SLEEP)
         except Exception as e:
-            time.sleep(5)
+            time.sleep(HEARTBEAT_SLEEP)

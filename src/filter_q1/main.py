@@ -2,8 +2,10 @@ import os
 import logging
 import bisect
 import signal
+import socket
+import time
 
-from common import middleware, message_protocol
+from common import middleware, message_protocol,heartbeat
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -13,6 +15,9 @@ FILTER_PREFIX = os.environ["FILTER_PREFIX"]
 UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 DONE = True
 WORKING = False
+MANAGER_HOST_0 = os.environ["MANAGER_HOST_0"]
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
 
 
 class DollarAmtFilter:
@@ -24,6 +29,7 @@ class DollarAmtFilter:
             MOM_HOST, OUTPUT_QUEUE
         )
         self.eof_count = {}
+        self.heartbeat = heartbeat.Heartbeat(NODE_NAME, MANAGER_HOST_0, MANAGER_PORT)
 
     def _process_data(self, transaction):
         if transaction["amount_paid"] < 50:
@@ -58,8 +64,10 @@ class DollarAmtFilter:
             self._process_data(deserialized_message)
         ack()
 
+
     def start(self):
         try:
+            self.heartbeat.start()
             self.input_exchange.start_consuming(self.process_messsage)
         except Exception as e:
             logging.exception(f"Error consuming messages: {e}")
@@ -67,10 +75,12 @@ class DollarAmtFilter:
     def stop(self):
         logging.info(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
         self.input_exchange.stop_consuming()
+        self.heartbeat.stop()
 
     def close(self):
         self.input_exchange.close()
         self.output_queue.close()
+
 
 
 def main():

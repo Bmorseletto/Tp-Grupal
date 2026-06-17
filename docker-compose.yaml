@@ -199,6 +199,11 @@ services:
       - FILTER_PREFIX=DollarAmtFilter
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=dollar_amount_filter_0
+      - MANAGER_HOST_0=manager_0
+      #- MANAGER_HOST_1=manager_1
+      #- MANAGER_HOST_2=manager_2
+      - MANAGER_PORT=5679
   dollar_amount_filter_1:
     build:
       context: ./src/
@@ -214,6 +219,11 @@ services:
       - FILTER_PREFIX=DollarAmtFilter
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=dollar_amount_filter_1
+      - MANAGER_HOST_0=manager_0
+      #- MANAGER_HOST_1=manager_1
+      #- MANAGER_HOST_2=manager_2
+      - MANAGER_PORT=5679
   dollar_amount_filter_2:
     build:
       context: ./src/
@@ -229,6 +239,11 @@ services:
       - FILTER_PREFIX=DollarAmtFilter
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=dollar_amount_filter_2
+      - MANAGER_HOST_0=manager_0
+      #- MANAGER_HOST_1=manager_1
+      #- MANAGER_HOST_2=manager_2
+      - MANAGER_PORT=5679
   query_1_aggregator:
     build:
       context: ./src/
@@ -871,3 +886,14 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
+  ### HEATBEAT MANAGERS ###
+  manager_0:
+    build:
+      context: ./src/
+      dockerfile: node_manager/Dockerfile
+    container_name: manager_0
+    environment:
+      - MANAGER_HOST=manager_0
+      - MANAGER_PORT=5679
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
