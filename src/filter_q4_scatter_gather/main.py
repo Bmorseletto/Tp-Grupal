@@ -17,7 +17,8 @@ class ScatterGatherDetector:
         self.input_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST,
             SCATTER_DETECTOR_PREFIX,
-            [SCATTER_DETECTOR_PREFIX, SCATTER_DETECTOR_PREFIX + str(ID)]
+            [SCATTER_DETECTOR_PREFIX, SCATTER_DETECTOR_PREFIX + str(ID)],
+            ID
         )
 
         self.output_queue = middleware.MessageMiddlewareQueueRabbitMQ(

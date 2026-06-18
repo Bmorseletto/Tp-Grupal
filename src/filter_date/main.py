@@ -23,7 +23,7 @@ class DateFilter:
 
     def __init__(self):
         self.input_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
-            MOM_HOST, FILTER_PREFIX, [f"{FILTER_PREFIX}",FILTER_PREFIX+f"{ID}"]
+            MOM_HOST, FILTER_PREFIX, [f"{FILTER_PREFIX}",FILTER_PREFIX+f"{ID}"], ID
         )
         logging.info(f"PERSONAL ROUTING KEY: {FILTER_PREFIX+f"{ID}"}")
         self.outputs_prefix = OUTPUTS_PREFIX.split(",")
@@ -38,6 +38,7 @@ class DateFilter:
                     self.outputs_prefix[i] + str(j)
                     for j in range(self.outputs_amounts[i])
                 ],
+                ID
             )
             for i in range(len(self.outputs_prefix))
         ]

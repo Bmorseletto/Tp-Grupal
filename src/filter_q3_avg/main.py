@@ -23,7 +23,7 @@ class AvgCalculator:
 
     def __init__(self):
         self.input_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
-            MOM_HOST, FILTER_PREFIX, [f"{FILTER_PREFIX}",FILTER_PREFIX+f"{ID}"]
+            MOM_HOST, FILTER_PREFIX, [f"{FILTER_PREFIX}",FILTER_PREFIX+f"{ID}"], ID
         )
         self.output_exchange =  middleware.MessageMiddlewareExchangeRabbitMQ(
                 MOM_HOST,
@@ -33,6 +33,7 @@ class AvgCalculator:
                     OUTPUT_PREFIX + str(j)
                     for j in range(OUTPUT_AMOUNT)
                 ],
+                ID
         )
         self.transactions_per_payment_format = {}
         self.eof_count = {}

@@ -21,12 +21,14 @@ class GraphFilter:
         self.input_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST,
             FILTER_PREFIX,
-            [f"{FILTER_PREFIX}", FILTER_PREFIX + f"{ID}"]
+            [f"{FILTER_PREFIX}", FILTER_PREFIX + f"{ID}"],
+            ID
         )
         self.output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST,
             OUTPUT_PREFIX,
             [OUTPUT_PREFIX] + [OUTPUT_PREFIX + str(j) for j in range(OUTPUT_AMOUNT)],
+            ID
         )
         self.eof_count = {}
         self.origin_groups = {}

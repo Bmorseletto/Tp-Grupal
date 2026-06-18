@@ -137,7 +137,7 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 
             self._reassembler.process(body, ack, nack, on_message_callback)
 
-        self._channel.basic_qos(prefetch_count=1)
+        self._channel.basic_qos(prefetch_count=100)
         self._consumer_tag = self._channel.basic_consume(
             queue=self._queue_name,
             on_message_callback=_internal_callback,
@@ -187,13 +187,15 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 
 
 class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
-    def __init__(self, host, exchange_name, routing_keys, exchange_type="topic"):
+    def __init__(self, host, exchange_name, routing_keys, consumer_id, exchange_type="topic"):
         self._conn = pika.BlockingConnection(pika.ConnectionParameters(host=host, heartbeat=0))
         self._channel = self._conn.channel()
         self._exchange_name = exchange_name
-        self._channel.exchange_declare(exchange=self._exchange_name, exchange_type=exchange_type)
-        result = self._channel.queue_declare(queue="")
-        self._queue_name = result.method.queue
+        self._channel.exchange_declare(exchange=self._exchange_name, exchange_type=exchange_type, durable=True)
+        # result = self._channel.queue_declare(queue="", durable=True)
+        # self._queue_name = result.method.queue
+        self._queue_name = f"{exchange_name}_consumer_{consumer_id}"
+        self._channel.queue_declare(queue=self._queue_name, durable=True)
         for key in routing_keys:
             self._channel.queue_bind(exchange=self._exchange_name, queue=self._queue_name, routing_key=key)
         self._routing_keys = routing_keys
