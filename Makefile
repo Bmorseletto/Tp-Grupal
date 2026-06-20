@@ -24,6 +24,10 @@ accounts:
 	uv run generate_accounts.py --output=datasets --source=datasets/LI-Small_accounts.csv --prefix=accounts 800000 3
 .PHONY: accounts
 
+clean:
+	sudo rm -rf output/*
+.PHONY: clean
+
 # test:
 # 	mkdir -p output
 # 	rm ./output/* -f
