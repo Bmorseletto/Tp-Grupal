@@ -51,7 +51,7 @@ class MaxTransactionFilter:
             logging.debug(f"Sending max values {results}, to {OUTPUT_QUEUE}")
             self.output_queue.send(message_protocol.internal.serialize({"nodo_id":ID, CLIENT_ID_KEY: client_id, "results": results} ))
 
-    def process_messsage(self, message, ack, nack):
+    def process_messsage(self, message, ack, nack, ctx):
         deserialized_message = message_protocol.internal.deserialize(message)
         logging.debug(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:

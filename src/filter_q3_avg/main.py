@@ -33,7 +33,8 @@ class AvgCalculator:
                     OUTPUT_PREFIX + str(j)
                     for j in range(OUTPUT_AMOUNT)
                 ],
-                ID
+                ID,
+                publish_only=True,
         )
         self.transactions_per_payment_format = {}
         self.eof_count = {}
@@ -82,7 +83,7 @@ class AvgCalculator:
         logging.info(f"AVG RESULTS: client_id: {client_id}, results: {results}")
         self.output_exchange.send_by_key(message_protocol.internal.serialize({"nodo_id":ID, "client_id":client_id, "avg": results}), OUTPUT_PREFIX)
 
-    def process_messsage(self, message, ack, nack):
+    def process_messsage(self, message, ack, nack, ctx):
         deserialized_message = message_protocol.internal.deserialize(message)
         if len(deserialized_message) == 2:
             logging.debug(f"EOF {deserialized_message}")

@@ -42,7 +42,7 @@ class AggregatorQ5:
                 message_protocol.internal.serialize([client_id, "q5"])
             )
 
-    def process_messsage(self, message, ack, nack):
+    def process_messsage(self, message, ack, nack, ctx):
         deserialized_message = message_protocol.internal.deserialize(message)
         logging.debug(f"Received message: {deserialized_message}")
         if len(deserialized_message) == 2:

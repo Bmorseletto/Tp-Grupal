@@ -65,7 +65,7 @@ class JoinFilterQ3:
         except Exception as e:
             logging.error(f"ERROR: {e}")
 
-    def process_messsage(self, message, ack, nack):
+    def process_messsage(self, message, ack, nack, ctx):
         desiriized_message = message_protocol.internal.deserialize(message)
         if len(desiriized_message) == 2:
             self._process_eof(desiriized_message)

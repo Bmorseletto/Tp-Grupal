@@ -43,7 +43,8 @@ class CurrencyFilter:
                     self.filter_q_prefixes[i] + str(j)
                     for j in range(self.filter_q_amounts[i])
                 ],
-                ID
+                ID,
+                publish_only=True,
             )
             for i in range(TOTAL_QUERIES)
         ]
@@ -55,7 +56,8 @@ class CurrencyFilter:
                     FILTER_DATE_PREFIX + str(j)
                     for j in range(FILTER_DATE_AMOUNT)
                 ],
-                ID
+                ID,
+                publish_only=True,
             )
 
     def _process_data(
@@ -160,7 +162,7 @@ class CurrencyFilter:
                 ),
                 FILTER_DATE_PREFIX,)
 
-    def process_messsage(self, message, ack, nack):
+    def process_messsage(self, message, ack, nack, ctx):
         deserialized_message = message_protocol.internal.deserialize(message)
         logging.debug(f"MESSAGE: {deserialized_message}")
         if len(deserialized_message) == 1:

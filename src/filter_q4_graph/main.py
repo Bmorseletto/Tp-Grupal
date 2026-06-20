@@ -28,7 +28,8 @@ class GraphFilter:
             MOM_HOST,
             OUTPUT_PREFIX,
             [OUTPUT_PREFIX] + [OUTPUT_PREFIX + str(j) for j in range(OUTPUT_AMOUNT)],
-            ID
+            ID,
+            publish_only=True,
         )
         self.eof_count = {}
         self.origin_groups = {}
@@ -144,7 +145,7 @@ class GraphFilter:
             message_protocol.internal.serialize(result), routing_key
         )
 
-    def process_messsage(self, message, ack, nack):
+    def process_messsage(self, message, ack, nack, ctx):
         deserialized_message = message_protocol.internal.deserialize(message)
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)

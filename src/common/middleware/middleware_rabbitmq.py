@@ -16,9 +16,26 @@ from .middleware import (
 
 CHUNK_SIZE = 98304
 _CHUNK_MARKER = "__chunked"
+_MSGID_KEY = "__msgid"
 
 
-def _publish_chunked(channel, exchange, routing_key, body, properties=None):
+def _generate_msg_id(source_id):
+    if not hasattr(_generate_msg_id, "_counters"):
+        _generate_msg_id._counters = {}
+    seq = _generate_msg_id._counters.get(source_id, 0)
+    _generate_msg_id._counters[source_id] = seq + 1
+    return f"{source_id}_{seq}"
+
+
+def _build_properties(msg_id, delivery_mode=2):
+    return pika.BasicProperties(
+        delivery_mode=delivery_mode,
+        message_id=msg_id,
+    )
+
+
+def _publish_chunked(channel, exchange, routing_key, body, msg_id, properties=None):
+    properties = properties or _build_properties(msg_id)
     if len(body) <= CHUNK_SIZE:
         channel.basic_publish(
             exchange=exchange,
@@ -27,9 +44,9 @@ def _publish_chunked(channel, exchange, routing_key, body, properties=None):
             properties=properties,
         )
         return
-    msg_id = uuid.uuid4().hex
+    chunk_group_id = uuid.uuid4().hex
     total = (len(body) + CHUNK_SIZE - 1) // CHUNK_SIZE
-    logging.info(f"Publishing chunked message: id={msg_id}, total_chunks={total}, size={len(body)}")
+    logging.info(f"Publishing chunked message: msg_id={msg_id}, group={chunk_group_id}, total_chunks={total}, size={len(body)}")
     try:
         for idx in range(total):
             start = idx * CHUNK_SIZE
@@ -38,7 +55,8 @@ def _publish_chunked(channel, exchange, routing_key, body, properties=None):
             logging.info(f"Publishing chunk {idx + 1}/{total} for message id={msg_id}, chunk_size={end - start}")
             chunk_msg = json.dumps({
                 _CHUNK_MARKER: True,
-                "msg_id": msg_id,
+                "chunk_group_id": chunk_group_id,
+                _MSGID_KEY: msg_id,
                 "idx": idx,
                 "total": total,
                 "data": chunk_data,
@@ -57,33 +75,37 @@ def _publish_chunked(channel, exchange, routing_key, body, properties=None):
 class _ChunkReassembler:
     def __init__(self):
         self._buffers = {}
+        self._msg_ids = {}
 
     def process(self, body, ack, nack, deliver):
         try:
             parsed = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
-            deliver(body, ack, nack)
+            deliver(body, ack, nack, None)
             return
 
         if not isinstance(parsed, dict) or not parsed.get(_CHUNK_MARKER):
-            deliver(body, ack, nack)
+            deliver(body, ack, nack, None)
             return
-        
-        logging.info(f"Received chunked message: id={parsed.get('msg_id')}, idx={parsed.get('idx')}, total={parsed.get('total')}")
 
-        msg_id = parsed["msg_id"]
+        logging.info(f"Received chunked message: id={parsed.get('msg_id')}, idx={parsed.get('idx')}, total={parsed.get('total')}")
+        
+        chunk_group_id = parsed["chunk_group_id"]
+        original_msg_id = parsed.get(_MSGID_KEY)
         idx = parsed["idx"]
         total = parsed["total"]
         chunk_data = base64.b64decode(parsed["data"])
 
-        if msg_id not in self._buffers:
-            self._buffers[msg_id] = [None] * total
+        if chunk_group_id not in self._buffers:
+            self._buffers[chunk_group_id] = [None] * total
+            self._msg_ids[chunk_group_id] = original_msg_id
 
-        self._buffers[msg_id][idx] = chunk_data
+        self._buffers[chunk_group_id][idx] = chunk_data
 
-        if all(c is not None for c in self._buffers[msg_id]):
-            full_body = b"".join(self._buffers.pop(msg_id))
-            deliver(full_body, lambda: None, nack)
+        if all(c is not None for c in self._buffers[chunk_group_id]):
+            full_body = b"".join(self._buffers.pop(chunk_group_id))
+            msg_id = self._msg_ids.pop(chunk_group_id)
+            deliver(full_body, lambda: None, nack, msg_id)
         ack()
 
 
@@ -105,16 +127,7 @@ def _create_connection(host):
 
 
 class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
-    """RabbitMQ implementation of point-to-point queue communication.
-
-    Declares a durable queue and publishes messages to it via the default
-    exchange (exchange=""). Messages are persisted (delivery_mode=2) and
-    consumed with manual ack/nack. Thread-safe sending via a lock.
-    Supports graceful shutdown through stop_consuming() callable from
-    SIGTERM handlers via add_callback_threadsafe.
-    """
-
-    def __init__(self, host, queue_name):
+    def __init__(self, host, queue_name, source_id=None):
         self._host = host
         self._queue_name = queue_name
         self._connection = _create_connection(host)
@@ -124,6 +137,7 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
         self._consuming = False
         self._lock = threading.Lock()
         self._reassembler = _ChunkReassembler()
+        self._source_id = source_id if source_id else queue_name
 
     def start_consuming(self, on_message_callback):
         self._consuming = True
@@ -135,7 +149,16 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
             def nack():
                 ch.basic_nack(delivery_tag=method.delivery_tag)
 
-            self._reassembler.process(body, ack, nack, on_message_callback)
+            msg_id = None
+            if properties and properties.message_id:
+                msg_id = properties.message_id
+
+            def deliver(body, ack_fn, nack_fn, reassembled_msg_id):
+                resolved_msg_id = reassembled_msg_id if reassembled_msg_id else msg_id
+                ctx = {"msg_id": resolved_msg_id}
+                on_message_callback(body, ack_fn, nack_fn, ctx)
+
+            self._reassembler.process(body, ack, nack, deliver)
 
         self._channel.basic_qos(prefetch_count=100)
         self._consumer_tag = self._channel.basic_consume(
@@ -165,12 +188,14 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
     def send(self, message):
         with self._lock:
             try:
+                msg_id = _generate_msg_id(self._source_id)
                 _publish_chunked(
                     self._channel,
                     exchange="",
                     routing_key=self._queue_name,
                     body=message,
-                    properties=pika.BasicProperties(delivery_mode=2),
+                    msg_id=msg_id,
+                    properties=pika.BasicProperties(delivery_mode=2, message_id=msg_id),
                 )
             except pika.exceptions.AMQPConnectionError:
                 raise MessageMiddlewareDisconnectedError()
@@ -187,31 +212,39 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 
 
 class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
-    def __init__(self, host, exchange_name, routing_keys, consumer_id, exchange_type="topic"):
+    def __init__(self, host, exchange_name, routing_keys, consumer_id, exchange_type="topic", publish_only=False, source_id=None):
         self._conn = pika.BlockingConnection(pika.ConnectionParameters(host=host, heartbeat=0))
         self._channel = self._conn.channel()
         self._exchange_name = exchange_name
         self._channel.exchange_declare(exchange=self._exchange_name, exchange_type=exchange_type, durable=True)
-        # result = self._channel.queue_declare(queue="", durable=True)
-        # self._queue_name = result.method.queue
-        self._queue_name = f"{exchange_name}_consumer_{consumer_id}"
-        self._channel.queue_declare(queue=self._queue_name, durable=True)
-        for key in routing_keys:
-            self._channel.queue_bind(exchange=self._exchange_name, queue=self._queue_name, routing_key=key)
+        self._publish_only = publish_only
         self._routing_keys = routing_keys
         self._delivery_tag = None
         self._consumer_tag = None
         self._channel.confirm_delivery()
-        self._reassembler = _ChunkReassembler()
+        self._source_id = source_id if source_id else f"{exchange_name}_{consumer_id}"
+        if publish_only:
+            self._queue_name = None
+            self._reassembler = None
+            self._consumer_id = consumer_id
+        else:
+            self._queue_name = f"{exchange_name}_consumer_{consumer_id}"
+            self._channel.queue_declare(queue=self._queue_name, durable=True)
+            for key in routing_keys:
+                self._channel.queue_bind(exchange=self._exchange_name, queue=self._queue_name, routing_key=key)
+            self._reassembler = _ChunkReassembler()
+            self._consumer_id = consumer_id
 
     def send(self, message):
         try:
             keys = ".".join(self._routing_keys)
+            msg_id = _generate_msg_id(self._source_id)
             _publish_chunked(
                 self._channel,
                 exchange=self._exchange_name,
                 routing_key=keys,
                 body=message,
+                msg_id=msg_id,
             )
         except pika.exceptions.AMQPConnectionError as e:
             self.close()
@@ -224,14 +257,13 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
         if key not in self._routing_keys:
             raise KeyError(f"{key} not in routing keys")
         try:
-            # self._channel.basic_publish(exchange=self._exchange_name,
-            #             routing_key=key,
-            #             body=message)
+            msg_id = _generate_msg_id(self._source_id)
             _publish_chunked(
                 self._channel,
                 exchange=self._exchange_name,
                 routing_key=key,
                 body=message,
+                msg_id=msg_id,
             )
         except pika.exceptions.AMQPConnectionError as e:
             self.close()
@@ -247,6 +279,8 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
             raise MessageMiddlewareCloseError(e)
 
     def start_consuming(self, on_message_callback):
+        if self._publish_only:
+            raise RuntimeError("Cannot consume from publish_only exchange")
         try:
             _start_consuming(self, on_message_callback=on_message_callback)
         except pika.exceptions.AMQPConnectionError as e:
@@ -265,6 +299,8 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
             raise MessageMiddlewareDisconnectedError(e)
 
     def ack(self):
+        if self._publish_only:
+            return
         self._channel.basic_ack(delivery_tag=self._delivery_tag)
 
     def set_delivery_tag(self, delivery_tag):
@@ -274,6 +310,8 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
         self._consumer_tag = consumer_tag
 
     def bind(self, routing_keys=[]):
+        if self._publish_only:
+            raise RuntimeError("Cannot bind on publish_only exchange")
         for key in routing_keys:
             self._channel.queue_bind(exchange=self._exchange_name, queue=self._queue_name, routing_key=key)
             self._routing_keys.append(key)
@@ -286,7 +324,16 @@ def _start_consuming(message_middleware, on_message_callback):
         def ack():
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
-        reassembler.process(body, ack, ch.basic_nack, on_message_callback)
+        msg_id = None
+        if properties and properties.message_id:
+            msg_id = properties.message_id
+
+        def deliver(body, ack_fn, nack_fn, reassembled_msg_id):
+            resolved_msg_id = reassembled_msg_id if reassembled_msg_id else msg_id
+            ctx = {"msg_id": resolved_msg_id}
+            on_message_callback(body, ack_fn, nack_fn, ctx)
+
+        reassembler.process(body, ack, ch.basic_nack, deliver)
         message_middleware.set_delivery_tag(method.delivery_tag)
 
     message_middleware._channel.basic_qos(prefetch_count=100)
@@ -305,108 +352,6 @@ def _close(message_middleware):
         message_middleware._channel.close()
     if message_middleware._conn.is_open:
         message_middleware._conn.close()
-
-
-class DirectExchangeBcast:
-    """Broadcast communication using a direct exchange.
-
-    Implements one-to-all messaging among a group of peer instances using
-    only a direct exchange. Each instance gets its own queue bound with its
-    instance_id as the routing key. broadcast() publishes the same message
-    to every known peer's routing key on the direct exchange, achieving the
-    same fan-out effect without requiring a fanout exchange type.
-
-    Used for EOF synchronization among horizontally-scaled filter instances:
-    when one instance receives an EOF via round-robin, it broadcasts it to
-    all peers so every instance can flush its state.
-    """
-
-    def __init__(self, host, exchange_name, instance_id, peer_ids=None):
-        self._host = host
-        self._exchange_name = exchange_name
-        self._instance_id = instance_id
-        self._peer_ids = peer_ids or [instance_id]
-        self._connection = _create_connection(host)
-        self._channel = self._connection.channel()
-        self._channel.exchange_declare(
-            exchange=exchange_name, exchange_type="direct", durable=True
-        )
-        self._queue_name = f"{exchange_name}_{instance_id}"
-        self._channel.queue_declare(queue=self._queue_name, durable=True)
-        self._channel.queue_bind(
-            exchange=exchange_name,
-            queue=self._queue_name,
-            routing_key=instance_id,
-        )
-        self._reassembler = _ChunkReassembler()
-
-    def add_peer(self, peer_id):
-        if peer_id not in self._peer_ids:
-            self._peer_ids.append(peer_id)
-            peer_queue = f"{self._exchange_name}_{peer_id}"
-            self._channel.queue_declare(queue=peer_queue, durable=True)
-            self._channel.queue_bind(
-                exchange=self._exchange_name,
-                queue=peer_queue,
-                routing_key=peer_id,
-            )
-
-    def broadcast(self, message):
-        try:
-            for peer_id in self._peer_ids:
-                _publish_chunked(
-                    self._channel,
-                    exchange=self._exchange_name,
-                    routing_key=peer_id,
-                    body=message,
-                    properties=pika.BasicProperties(delivery_mode=2),
-                )
-        except pika.exceptions.AMQPConnectionError:
-            raise MessageMiddlewareDisconnectedError()
-        except Exception as e:
-            raise MessageMiddlewareMessageError(str(e))
-
-    def start_consuming(self, on_message_callback):
-        reassembler = self._reassembler
-
-        def _internal_callback(ch, method, properties, body):
-            def ack():
-                ch.basic_ack(delivery_tag=method.delivery_tag)
-
-            def nack():
-                ch.basic_nack(delivery_tag=method.delivery_tag)
-
-            reassembler.process(body, ack, nack, on_message_callback)
-
-        self._channel.basic_qos(prefetch_count=1)
-        self._channel.basic_consume(
-            queue=self._queue_name,
-            on_message_callback=_internal_callback,
-        )
-        try:
-            self._channel.start_consuming()
-        except pika.exceptions.AMQPConnectionError:
-            raise MessageMiddlewareDisconnectedError()
-        except Exception:
-            pass
-
-    def stop_consuming(self):
-        try:
-            self._connection.add_callback_threadsafe(
-                lambda: self._channel.stop_consuming()
-            )
-        except Exception:
-            try:
-                self._channel.stop_consuming()
-            except Exception:
-                pass
-
-    def close(self):
-        try:
-            self.stop_consuming()
-            self._connection.close()
-        except Exception as e:
-            raise MessageMiddlewareCloseError(str(e))
 
 
 class MultiQueueConsumer:
@@ -443,7 +388,16 @@ class MultiQueueConsumer:
                 def nack():
                     ch.basic_nack(delivery_tag=method.delivery_tag)
 
-                reasm.process(body, ack, nack, cb)
+                msg_id = None
+                if properties and properties.message_id:
+                    msg_id = properties.message_id
+
+                def deliver(body, ack_fn, nack_fn, reassembled_msg_id):
+                    resolved_msg_id = reassembled_msg_id if reassembled_msg_id else msg_id
+                    ctx = {"msg_id": resolved_msg_id}
+                    cb(body, ack_fn, nack_fn, ctx)
+
+                reasm.process(body, ack, nack, deliver)
 
             self._channel.basic_consume(
                 queue=queue_name,

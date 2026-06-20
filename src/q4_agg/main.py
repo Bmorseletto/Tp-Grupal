@@ -65,7 +65,7 @@ class AggregatorQ4:
         except Exception as e:
             logging.error(f"EOF ERROR: {e}")
 
-    def process_message(self, message, ack, nack):
+    def process_message(self, message, ack, nack, ctx):
         deserialized = message_protocol.internal.deserialize(message)
         if "nodo_id" in deserialized.keys():  # EOF
             self._process_eof(deserialized)

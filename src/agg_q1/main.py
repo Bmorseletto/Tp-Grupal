@@ -64,7 +64,7 @@ class JoinFilterQ1:
             del self.worker_finished_with_client[client_id]
             logging.info(f"finished processing EOF of {client_id} sent results to gateway")
 
-    def process_messsage(self, message, ack, nack):
+    def process_messsage(self, message, ack, nack, ctx):
         deserialized_message = message_protocol.internal.deserialize(message)
         if len(deserialized_message) == 2:
             self._process_eof(deserialized_message)

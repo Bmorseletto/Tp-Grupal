@@ -49,7 +49,7 @@ class DollarAmtFilter:
         )
         del self.eof_count[client_id]
 
-    def process_messsage(self, message, ack, nack):
+    def process_messsage(self, message, ack, nack, ctx):
         deserialized_message = message_protocol.internal.deserialize(message)
         logging.debug(f"MESSAGE {deserialized_message}")
         if len(deserialized_message) == 2:

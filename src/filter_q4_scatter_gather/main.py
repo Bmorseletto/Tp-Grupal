@@ -71,7 +71,7 @@ class ScatterGatherDetector:
         self.results.pop(client_id, None)
         self.eof_count.pop(client_id, None)
 
-    def process_message(self, message, ack, nack):
+    def process_message(self, message, ack, nack, ctx):
         deserialized = message_protocol.internal.deserialize(message)
         if len(deserialized) == 2:
             self._process_eof(deserialized)

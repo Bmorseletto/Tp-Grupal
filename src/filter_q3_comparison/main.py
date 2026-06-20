@@ -74,7 +74,7 @@ class AvgFilter:
         except Exception as e:
             logging.warning(f"ERROR: {e}")
 
-    def process_messsage(self, message, ack, nack):
+    def process_messsage(self, message, ack, nack, ctx):
         try:
             deserialized_message = message_protocol.internal.deserialize(message)
             if NODO_ID in deserialized_message:

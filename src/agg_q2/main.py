@@ -78,7 +78,7 @@ class JoinFilterQ2:
             })
         return enriched
 
-    def _on_transaction_message(self, message, ack, nack):
+    def _on_transaction_message(self, message, ack, nack, ctx):
         try:
             deserialized_message = message_protocol.internal.deserialize(message)
             self._process_transaction(deserialized_message)
@@ -87,7 +87,7 @@ class JoinFilterQ2:
             logging.exception("An error occurred while processing a transaction message")
             nack()
 
-    def _on_accounts_message(self, message, ack, nack):
+    def _on_accounts_message(self, message, ack, nack, ctx):
         try:
             deserialized_message = message_protocol.internal.deserialize(message)
             if isinstance(deserialized_message, list):

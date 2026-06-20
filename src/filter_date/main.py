@@ -38,7 +38,8 @@ class DateFilter:
                     self.outputs_prefix[i] + str(j)
                     for j in range(self.outputs_amounts[i])
                 ],
-                ID
+                ID,
+                publish_only=True,
             )
             for i in range(len(self.outputs_prefix))
         ]
@@ -100,7 +101,7 @@ class DateFilter:
                 self.outputs_prefix[i],
             )
 
-    def process_messsage(self, message, ack, nack):
+    def process_messsage(self, message, ack, nack, ctx):
         try:
             deserialized_message = message_protocol.internal.deserialize(message)
             logging.debug(f"MESSAGE {deserialized_message}")
