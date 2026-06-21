@@ -200,9 +200,7 @@ services:
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
       - NODE_NAME=dollar_amount_filter_0
-      - MANAGER_HOST_0=manager_0
-      #- MANAGER_HOST_1=manager_1
-      #- MANAGER_HOST_2=manager_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
   dollar_amount_filter_1:
     build:
@@ -220,9 +218,7 @@ services:
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
       - NODE_NAME=dollar_amount_filter_1
-      - MANAGER_HOST_0=manager_0
-      #- MANAGER_HOST_1=manager_1
-      #- MANAGER_HOST_2=manager_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
   dollar_amount_filter_2:
     build:
@@ -240,9 +236,7 @@ services:
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
       - NODE_NAME=dollar_amount_filter_2
-      - MANAGER_HOST_0=manager_0
-      #- MANAGER_HOST_1=manager_1
-      #- MANAGER_HOST_2=manager_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
   query_1_aggregator:
     build:
@@ -892,8 +886,43 @@ services:
       context: ./src/
       dockerfile: node_manager/Dockerfile
     container_name: manager_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     environment:
+      - ID=0
       - MANAGER_HOST=manager_0
       - MANAGER_PORT=5679
+      - MOM_HOST=rabbitmq
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  manager_1:
+    build:
+      context: ./src/
+      dockerfile: node_manager/Dockerfile
+    container_name: manager_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - ID=1
+      - MANAGER_HOST=manager_1
+      - MANAGER_PORT=5679
+      - MOM_HOST=rabbitmq
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  manager_2:
+    build:
+      context: ./src/
+      dockerfile: node_manager/Dockerfile
+    container_name: manager_2
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - ID=2
+      - MANAGER_HOST=manager_2
+      - MANAGER_PORT=5679
+      - MOM_HOST=rabbitmq
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

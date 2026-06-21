@@ -15,7 +15,7 @@ FILTER_PREFIX = os.environ["FILTER_PREFIX"]
 UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 DONE = True
 WORKING = False
-MANAGER_HOST_0 = os.environ["MANAGER_HOST_0"]
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
 
@@ -29,7 +29,9 @@ class DollarAmtFilter:
             MOM_HOST, OUTPUT_QUEUE
         )
         self.eof_count = {}
-        self.heartbeat = heartbeat.Heartbeat(NODE_NAME, MANAGER_HOST_0, MANAGER_PORT)
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _process_data(self, transaction):
         if transaction["amount_paid"] < 50:
@@ -67,7 +69,8 @@ class DollarAmtFilter:
 
     def start(self):
         try:
-            self.heartbeat.start()
+            for heartbeat in self.heartbeats:
+                heartbeat.start()
             self.input_exchange.start_consuming(self.process_messsage)
         except Exception as e:
             logging.exception(f"Error consuming messages: {e}")

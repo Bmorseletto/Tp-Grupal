@@ -202,6 +202,12 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
         self._channel.confirm_delivery()
         self._reassembler = _ChunkReassembler()
 
+    def call_later(self,time, function):
+        return self._conn.call_later(time, function)
+
+    def remove_timeout(self, timer):
+        self._conn.remove_timeout(timer)
+
     def send(self, message):
         try:
             keys = ".".join(self._routing_keys)
@@ -219,8 +225,8 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
             raise MessageMiddlewareMessageError(e)
 
     def send_by_key(self, message, key):
-        if key not in self._routing_keys:
-            raise KeyError(f"{key} not in routing keys")
+        #if key not in self._routing_keys:
+        #    raise KeyError(f"{key} not in routing keys")
         try:
             # self._channel.basic_publish(exchange=self._exchange_name,
             #             routing_key=key,

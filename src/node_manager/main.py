@@ -9,22 +9,33 @@ import subprocess
 import uuid
 
 from common import middleware, message_protocol
+from manager_intercomm import NodeManagerIntercomm, WORKING, VOTING
 
-#MOM_HOST = os.environ["MOM_HOST"]
+MOM_HOST = os.environ["MOM_HOST"]
 MANAGER_HOST = os.environ["MANAGER_HOST"]
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 SOCKET_TIMEOUT = 6
+ID = int(os.environ["ID"])
+   
 
 class NodeManager:
     def __init__(self):
-
         pass
-    
     def start(self):
         with multiprocessing.Manager() as manager:
             sigterm_received = manager.Value("c_short", 0)
+            status = manager.Value(int, WORKING)
+            is_leader = manager.Value(bool,  ID == 0)
+            status_gate = manager.Event()
+            status_gate.set()
+            intercomm = NodeManagerIntercomm(ID)
+            intercomm_process = multiprocessing.Process(
+                target=intercomm.start,
+                args=(status, status_gate, is_leader, MOM_HOST),
+                daemon=True
+            )
+            intercomm_process.start()
             with multiprocessing.Pool(processes=os.process_cpu_count()) as processes_pool:
-                
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
                     server_socket.bind((MANAGER_HOST, MANAGER_PORT))
                     server_socket.listen()
@@ -45,7 +56,7 @@ class NodeManager:
                                  node_dict[node_id] = node_socket
                             processes_pool.apply_async(
                                 _handle_node,
-                                [node_socket, node_id, node_dict, lock],
+                                [node_socket, node_id, node_dict, lock, status_gate, is_leader],
                             )
                         except socket.error:
                             if sigterm_received.value == 0:
@@ -63,7 +74,7 @@ def handle_sigterm(server_socket, node_dict, sigterm_received):
         socket.shutdown(socket.SHUT_RDWR)
     sigterm_received.value = 1
 
-def _handle_node(node_socket, node_uuid, node_dict, lock):
+def _handle_node(node_socket, node_uuid, node_dict, lock, status_gate, is_leader):
     logging.basicConfig(level=logging.INFO)
     node_id = ""
     timeout_counter = 0
@@ -84,7 +95,9 @@ def _handle_node(node_socket, node_uuid, node_dict, lock):
         except Exception as e:
             logging.exception(f"Error handling node {node_id}: {e}")
             break
-    if node_id != "":
+    logging.info(f"This node is leader?: {is_leader}")
+    if node_id != "" and is_leader.value:
+        status_gate.wait()
         logging.info(f"restarting container {node_id}")
         resultado = subprocess.run(
             ['docker', 'restart', node_id], 
