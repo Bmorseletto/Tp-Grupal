@@ -5,7 +5,7 @@ import bisect
 import signal
 import zlib
 
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 from graph_router import GraphRouterCSV
 
 ID = int(os.environ["ID"])
@@ -19,6 +19,9 @@ UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 END_DATE =  os.environ["END_DATE"]
 DONE = True
 WORKING = False
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
 
 class DateFilter:
 
@@ -46,9 +49,12 @@ class DateFilter:
         self.counter2 = 0
         self.eof_count = {}
         self.graph_router = None
-        logging.info(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
-        logging.info(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
-        logging.info(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
+        logging.debug(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
+        logging.debug(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
+        logging.debug(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
 
     def _process_data(self, transaction):
         self.counter2 +=1
@@ -118,12 +124,16 @@ class DateFilter:
         
 
     def start(self):
+        for heartbeat in self.heartbeats:
+            heartbeat.start()
         self.input_exchange.start_consuming(self.process_messsage)
 
     
     def stop(self):
         logging.debug(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
         self.input_exchange.stop_consuming()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
     def close(self):
         self.input_exchange.close()
         for exchange in self.output_exchanges:

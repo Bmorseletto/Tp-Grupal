@@ -78,7 +78,8 @@ class DollarAmtFilter:
     def stop(self):
         logging.info(f"signal.SIGTERM recived stopping {FILTER_PREFIX}_{ID}")
         self.input_exchange.stop_consuming()
-        self.heartbeat.stop()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
 
     def close(self):
         self.input_exchange.close()

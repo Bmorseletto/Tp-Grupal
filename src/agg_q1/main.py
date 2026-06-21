@@ -3,13 +3,17 @@ import logging
 import signal
 import csv
 
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 Q1_FILTER_AMOUNT = int(os.environ["Q1_FILTER_AMOUNT"])
 Q1_FILTER_PREFIX = os.environ["Q1_FILTER_PREFIX"]
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
+
 
 
 class JoinFilterQ1:
@@ -22,6 +26,9 @@ class JoinFilterQ1:
         )
         self.results = {}
         self.worker_finished_with_client = {}
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _process_data(self, transaction: dict):
         client_id = transaction.pop("client_id")
@@ -74,12 +81,16 @@ class JoinFilterQ1:
 
     def start(self):
         try:
+            for heartbeat in self.heartbeats:
+                heartbeat.start()
             self.input_queue.start_consuming(self.process_messsage)
         except Exception as e:
             logging.exception(f"Error consuming messages: {e}")
 
     def stop(self):
         self.input_queue.stop_consuming()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
 
     def close(self):
         self.input_queue.close()

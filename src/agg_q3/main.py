@@ -4,7 +4,7 @@ import signal
 # import csv
 
 
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
@@ -14,6 +14,9 @@ Q3_FILTER_PREFIX = os.environ["Q3_FILTER_PREFIX"]
 RESULTS_STORAGE = "/output/q3_"
 AVG_STORAGE = "/output/q3_avg_"
 TRANSACTION_STORAGE = "/output/q3_transaction_"
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
 
 class JoinFilterQ3:
 
@@ -26,6 +29,9 @@ class JoinFilterQ3:
         )
         self.results = {}
         self.worker_finished_with_client = {}
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _process_data(self, transaction):
         try:
@@ -74,10 +80,14 @@ class JoinFilterQ3:
         ack()
 
     def start(self):
+        for heartbeat in self.heartbeats:
+                heartbeat.start()
         self.input_queue.start_consuming(self.process_messsage)
 
     def stop(self):
         self.input_queue.stop_consuming()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
 
     def close(self):
         self.input_queue.close()

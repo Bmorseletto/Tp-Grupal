@@ -3,7 +3,7 @@ import logging
 import signal
 import csv
 
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
@@ -11,6 +11,9 @@ OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 Q2_FILTER_AMOUNT = int(os.environ["Q2_FILTER_AMOUNT"])
 Q2_FILTER_PREFIX = os.environ["Q2_FILTER_PREFIX"]
 PATH_TRANSACTIONS = "/output/q2_transaction_"
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
 
 
 class JoinFilterQ2:
@@ -27,6 +30,9 @@ class JoinFilterQ2:
         self.worker_finished_with_client = {}
         self.banks = {}
         self.clients_accounts_eof = set()
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _process_transaction(self, transaction_message):
         client_id = transaction_message["client_id"]
@@ -104,6 +110,8 @@ class JoinFilterQ2:
 
     def start(self):
         try:
+            for heartbeat in self.heartbeats:
+                heartbeat.start()
             self.input_queue.start_consuming()
         except Exception as e:
             logging.exception(f"Error consuming messages: {e}")
@@ -111,6 +119,8 @@ class JoinFilterQ2:
 
     def stop(self):
         self.input_queue.stop_consuming()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
 
     def close(self):
         self.input_queue.close()
