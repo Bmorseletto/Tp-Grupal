@@ -190,7 +190,7 @@ services:
       - FILTER_Q3_PREFIX=DateFilterQ3
       - FILTER_Q3_AMOUNT=3
       - PYTHONUNBUFFERED=1
-      - NODE_NAME=currency_filter_0
+      - NODE_NAME=currency_filter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
   dollar_amount_filter_0:

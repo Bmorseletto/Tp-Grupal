@@ -7,6 +7,7 @@ import signal
 import socket
 import subprocess
 import uuid
+from asyncio import IncompleteReadError
 
 from common import middleware, message_protocol
 from manager_intercomm import NodeManagerIntercomm, WORKING, VOTING
@@ -52,7 +53,7 @@ class NodeManager:
                     for node_uuid, process in self.processes.items():
                         if process.is_alive() == False:
                             process.join()
-                        to_pop.append(node_uuid)
+                            to_pop.append(node_uuid)
                     for node_uuid in to_pop:
                         del self.processes[node_uuid]
                     try:
@@ -63,7 +64,7 @@ class NodeManager:
                                 node_dict[node_id] = node_socket
                         process = multiprocessing.Process(
                             target=_handle_node,
-                            args=(node_socket, node_id, node_dict, lock, status_gate, is_leader),
+                            args=(node_socket, node_id, node_dict, lock, status_gate, is_leader, sigterm_received),
                         )
                         process.start()
                         self.processes[node_id] = process
@@ -79,6 +80,7 @@ class NodeManager:
                         logging.exception("An error occurred while accepting a new client connection")
                         return_value = 2
                         break
+                to_pop = []
                 for node_uuid, process in self.processes.items():
                         if process.is_alive():
                             process.terminate()
@@ -86,58 +88,79 @@ class NodeManager:
                         to_pop.append(node_uuid)
                 for node_uuid in to_pop:
                     del self.processes[node_uuid]
+                if intercomm_process.is_alive():
+                    intercomm_process.terminate()
+                    intercomm_process.join()
                 return return_value
                 
 
 def handle_sigterm(server_socket, node_dict, sigterm_received):
-    server_socket.shutdown(socket.SHUT_RDWR)
-    for node_socket in node_dict.values():
-        node_socket.shutdown(socket.SHUT_RDWR)
     sigterm_received.value = 1
+    try:
+        server_socket.shutdown(socket.SHUT_RDWR)
+    except Exception:
+        pass
+    for node_socket in node_dict.values():
+        try:
+            node_socket.shutdown(socket.SHUT_RDWR)
+        except Exception:
+            pass
 
-def _handle_node(node_socket, node_uuid, node_dict, lock, status_gate, is_leader):
+def _handle_node(node_socket, node_uuid, node_dict, lock, status_gate, is_leader, sigterm_received):
     logging.basicConfig(level=logging.INFO)
     node_id = ""
     timeout_counter = 0
     node_socket.settimeout(SOCKET_TIMEOUT)
-    while True:
-        try:
-            test = False
-            message = message_protocol.external.recv_msg(node_socket)
-            if node_id == "":
-                test = True
-            node_id = message[1]
-            if test == True and is_leader.value:
-                logging.info(f"Heartbeat recived: {node_id}")
-        except socket.timeout:
-            logging.info(f"Heartbeat timeout for node: {node_id}")
-            if timeout_counter == 3:
-                logging.info(f"retries finished node is down")
+    try:
+        while True:
+            try:
+                test = False
+                message = message_protocol.external.recv_msg(node_socket)
+                if node_id == "":
+                    test = True
+                node_id = message[1]
+                if test == True and is_leader.value:
+                    logging.info(f"Heartbeat recived: {node_id}")
+                timeout_counter = 0
+            except socket.timeout:
+                logging.info(f"Heartbeat timeout for node: {node_id}")
+                if timeout_counter == 3:
+                    logging.info(f"retries finished node is down")
+                    break
+                else:
+                    timeout_counter+=1
+            except (IncompleteReadError, socket.error, ConnectionResetError, OSError):
+                if sigterm_received.value != 1:
+                    logging.warning(f"Conexión perdida abruptamente con el nodo '{node_id}'")
                 break
-            else:
-                timeout_counter+=1
-        except Exception as e:
-            logging.exception(f"Error handling node {node_id}: {e}")
-            break
-    logging.info(f"This node is leader?: {is_leader}")
-    if node_id != "" and is_leader.value:
-        status_gate.wait()
-        logging.info(f"restarting container {node_id}")
-        resultado = subprocess.run(
-            ['docker', 'restart', node_id], 
-            check=False, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        logging.info(f"restart subprocess for {node_id} run, result: {resultado.returncode}, stdout:{resultado.stdout}")
-        if resultado.returncode == 0:
-            logging.info(f"Servicio {node_id} levantado.")
-            with lock:
+    except Exception as e:
+        logging.exception(f"Error handling node {node_id}: {e}")
+    finally:
+        with lock:
+            try:
                 node_socket.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
+            node_socket.close()
+            
+            if node_uuid in node_dict:
                 del node_dict[node_uuid]
-        else:
-            logging.info(f"Compose falló para {node_id}. Stderr: {resultado.stderr}")
+    
+    if node_id != ""  and sigterm_received.value == 0:
+        status_gate.wait()
+        if is_leader.value:
+            logging.info(f"restarting container {node_id}")
+            resultado = subprocess.run(
+                ['docker', 'restart', node_id], 
+                check=False, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            if resultado.returncode == 0:
+                logging.info(f"Servicio {node_id} levantado.")
+            else:
+                logging.info(f"Compose falló para {node_id}. Stderr: {resultado.stderr}")
         
 
 
