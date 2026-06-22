@@ -26,13 +26,23 @@ def filter_worker_containers(containers: List[str], excluded_patterns: List[str]
     
     # Always exclude rabbitmq
     excluded_patterns = list(set(excluded_patterns + ['rabbitmq']))
+    limited_patterns = ['manager']
     
     workers = []
 
+    amount_of_limited = dict.fromkeys(limited_patterns, 0)
+
+    for container in containers:
+        for pattern in limited_patterns:
+            if pattern in container:
+                amount_of_limited[pattern] += 1
+    print(amount_of_limited)
     for container in containers:
         if any(pattern in container for pattern in excluded_patterns):
             continue
-
+        
+        if any(pattern in container and amount_of_limited[pattern] == 1 for pattern in limited_patterns):
+            continue
         workers.append(container)
 
     return workers

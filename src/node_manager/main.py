@@ -6,6 +6,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import time
 import uuid
 from asyncio import IncompleteReadError
 
@@ -149,9 +150,18 @@ def _handle_node(node_socket, node_uuid, node_dict, lock, status_gate, is_leader
     if node_id != ""  and sigterm_received.value == 0:
         status_gate.wait()
         if is_leader.value:
+            subprocess.run(
+                ['docker', 'wait', node_id],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            if sigterm_received.value == 1:
+                return
+            time.sleep(2)
             logging.info(f"restarting container {node_id}")
             resultado = subprocess.run(
-                ['docker', 'restart', node_id], 
+                ['docker', 'start', node_id], 
                 check=False, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE,
