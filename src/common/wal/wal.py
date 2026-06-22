@@ -1,0 +1,321 @@
+import json
+import os
+import tempfile
+import shutil
+import logging
+import threading
+
+logger = logging.getLogger(__name__)
+
+
+def _json_serial(obj):
+    if isinstance(obj, set):
+        return {"__set__": sorted(list(obj), key=str)}
+    if isinstance(obj, frozenset):
+        return {"__frozenset__": sorted(list(obj), key=str)}
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+def _json_hook(obj):
+    if isinstance(obj, dict):
+        if "__set__" in obj:
+            return set(obj["__set__"])
+        if "__frozenset__" in obj:
+            return frozenset(obj["__frozenset__"])
+        converted = {}
+        for k, v in obj.items():
+            try:
+                converted[int(k)] = v
+            except (ValueError, TypeError):
+                converted[k] = v
+        return converted
+    return obj
+
+
+def _dumps(obj):
+    return json.dumps(obj, default=_json_serial)
+
+
+def _loads(s):
+    return json.loads(s, object_hook=_json_hook)
+
+
+class WAL:
+    """Write-Ahead Log for crash recovery in stateful services.
+
+    Design
+    ------
+    1. **Append-only log** — every processed message is appended as a
+       single line (``msg_id\\tpayload``).  Appending is O(1); no full-state
+       serialization per message.
+
+    2. **Transaction file per send** — ``tx_begin(msg_id)`` creates
+       ``<msg_id>.tx`` on disk *before* the downstream send.
+       ``tx_commit(msg_id)`` removes it *after* the ack.  On restart,
+       any ``.tx`` file that survived means the crash happened between
+       send and ack — the message is considered already processed
+       (conservative, avoids duplicates).
+
+    3. **Backup (checkpoint)** — ``backup_save(state, last_seq)`` atomically
+       writes the full reconstructed state together with the log sequence
+       number up to which the backup is valid.  This allows truncating old
+       log entries via ``truncate(last_seq)``.
+
+    4. **Recovery** — ``recover(apply_fn)`` loads the backup, then replays
+       every log entry whose sequence is *after* the backup point by
+       calling ``apply_fn(entry, state)`` for each one.  Orphan ``.tx``
+       files are collected so the service can decide whether to skip
+       or re-process those messages.
+
+    File layout on disk (all under *base_dir*):
+        base_dir/
+            backup.json            — checkpoint: {state, last_seq}
+            wal.log                — append-only log (one entry per line)
+            tx/                    — one .tx file per in-flight send
+                <msg_id>.tx
+
+    Usage in a stateful service
+    ---------------------------
+        wal = WAL("/data/agg_q5_wal")
+
+        # ---- startup / recovery ----
+        state, _ = wal.backup_load(default=({"count": {},"workers": {}}, 0))
+        wal.recover(apply_fn=lambda entry, st: my_apply(entry, st),
+                    state=state)
+
+        # ---- on receive ----
+        def on_message(msg, ack, nack, ctx):
+            msg_id = ctx["msg_id"]
+            if msg_id in wal.orphan_tx_ids():
+                ack()
+                return
+            # update state, send downstream
+            wal.append(msg_id, record)
+            wal.tx_begin(msg_id)
+            output.send(serialized)
+            wal.tx_commit(msg_id)
+            ack()
+
+        # ---- periodic checkpoint ----
+        wal.backup_save(state, wal.last_seq())
+        wal.truncate(wal.last_seq())
+    """
+
+    def __init__(self, base_dir):
+        self._dir = base_dir
+        self._log_path = os.path.join(self._dir, "wal.log")
+        self._backup_path = os.path.join(self._dir, "backup.json")
+        self._tx_dir = os.path.join(self._dir, "tx")
+        os.makedirs(self._tx_dir, exist_ok=True)
+        self._lock = threading.Lock()
+        self._last_seq = 0
+        self._log_fd = None
+        self._init_log()
+
+    def _init_log(self):
+        if os.path.exists(self._log_path):
+            with open(self._log_path, "r") as f:
+                for line in f:
+                    line = line.rstrip("\n")
+                    if line:
+                        self._last_seq += 1
+        self._log_fd = open(self._log_path, "a")
+
+    def append(self, msg_id, record):
+        """Append a log entry atomically.  *record* must be JSON-serializable.
+
+        Each line in the log has the format:
+            \<seq>\\t\<msg_id>\\t\<payload_json>
+
+        Returns the sequence number assigned to this entry.
+        """
+        entry = _dumps(record)
+        with self._lock:
+            self._last_seq += 1
+            seq = self._last_seq
+            line = f"{seq}\t{msg_id}\t{entry}\n"
+            self._log_fd.write(line)
+            self._log_fd.flush()
+            os.fsync(self._log_fd.fileno())
+        return seq
+
+    def last_seq(self):
+        """Return the sequence number of the last appended entry."""
+        return self._last_seq
+
+    def read_entries(self, after_seq=0):
+        """Yield ``(seq, msg_id, record)`` for every entry whose seq >
+        *after_seq*.  Used during recovery to replay missed entries.
+        """
+        with open(self._log_path, "r") as f:
+            for line in f:
+                line = line.rstrip("\n")
+                if not line:
+                    continue
+                parts = line.split("\t", 2)
+                if len(parts) != 3:
+                    continue
+                seq = int(parts[0])
+                if seq <= after_seq:
+                    continue
+                msg_id = parts[1]
+                record = _loads(parts[2])
+                yield seq, msg_id, record
+
+    def truncate(self, up_to_seq):
+        """Remove log entries with seq <= *up_to_seq*.
+
+        Only called after a successful ``backup_save`` — the backup
+        supersedes those entries.
+        """
+        tmp_path = self._log_path + ".tmp"
+        kept = 0
+        try:
+            with open(self._log_path, "r") as src, \
+                 open(tmp_path, "w") as dst:
+                for line in src:
+                    parts = line.split("\t", 1)
+                    if parts and int(parts[0]) > up_to_seq:
+                        dst.write(line)
+                        kept += 1
+            os.replace(tmp_path, self._log_path)
+            logger.debug("truncated log up to seq %d (%d entries kept)",
+                         up_to_seq, kept)
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+
+    def tx_begin(self, msg_id):
+        """Create a transaction file for *msg_id* BEFORE sending downstream.
+
+        If the service crashes after the send but before the ack, the
+        ``.tx`` file will survive and ``orphan_tx_ids()`` will report it
+        on the next startup.
+        """
+        path = os.path.join(self._tx_dir, f"{msg_id}.tx")
+        fd, tmp = tempfile.mkstemp(dir=self._tx_dir, prefix=".tx_")
+        try:
+            os.write(fd, msg_id.encode("utf-8"))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp, path)
+
+    def tx_commit(self, msg_id):
+        """Remove the transaction file for *msg_id* AFTER the ack succeeds.
+
+        If the ``.tx`` file is already gone (e.g. previous commit), this
+        is a no-op.
+        """
+        path = os.path.join(self._tx_dir, f"{msg_id}.tx")
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+
+    def orphan_tx_ids(self):
+        """Return the set of msg_ids with orphan ``.tx`` files.
+
+        These represent sends that may have succeeded on a previous run
+        (crash happened between send and ack).  The service should treat
+        these messages as already-processed to avoid duplicates.
+        """
+        result = set()
+        if not os.path.isdir(self._tx_dir):
+            return result
+        for name in os.listdir(self._tx_dir):
+            if name.endswith(".tx") and not name.startswith("."):
+                msg_id = name[:-3]
+                result.add(msg_id)
+        return result
+
+    def backup_save(self, state, last_seq):
+        """Atomically write a checkpoint: the full reconstructed *state*
+        and the log *last_seq* up to which the backup is valid.
+        """
+        payload = _dumps({"state": state, "last_seq": last_seq}).encode("utf-8")
+        fd, tmp = tempfile.mkstemp(dir=self._dir, prefix=".bak_")
+        try:
+            os.write(fd, payload)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp, self._backup_path)
+        logger.debug("backup saved at seq %d (%d bytes)", last_seq, len(payload))
+
+    def backup_load(self, default=None):
+        """Load the latest checkpoint.
+
+        Returns ``(state, last_seq)``.  If no backup exists, returns
+        *default* (typically ``(initial_state, 0)``).
+        """
+        try:
+            with open(self._backup_path, "rb") as f:
+                data = _loads(f.read().decode("utf-8"))
+            return data["state"], data["last_seq"]
+        except FileNotFoundError:
+            return default
+        except (json.JSONDecodeError, KeyError, OSError) as e:
+            logger.warning("corrupt backup, starting fresh: %s", e)
+            return default
+
+    def recover(self, apply_fn, state):
+        """Recover state after a crash.
+
+        1. Orphan ``.tx`` files are discovered (their msg_ids are
+           available via ``orphan_tx_ids()``).  The service uses this to
+           skip already-processed messages.
+        2. Log entries after the backup point are replayed into *state*
+           by calling ``apply_fn(entry, state)`` for each one.
+
+        Returns the set of orphan msg_ids found.
+        """
+        orphans = self.orphan_tx_ids()
+        _, backup_seq = self.backup_load(default=(None, 0))
+        if backup_seq is None:
+            backup_seq = 0
+
+        replayed = 0
+        for _seq, _msg_id, record in self.read_entries(after_seq=backup_seq):
+            try:
+                apply_fn(record, state)
+                replayed += 1
+            except Exception:
+                logger.warning("failed to replay log entry seq=%d msg_id=%s",
+                               _seq, _msg_id, exc_info=True)
+
+        if replayed:
+            logger.info("recovery: replayed %d log entries from seq %d",
+                        replayed, backup_seq)
+        if orphans:
+            logger.info("recovery: %d orphan tx(s) found: %s",
+                        len(orphans), orphans)
+        return orphans
+
+    def close(self):
+        """Flush and close the log file descriptor."""
+        if self._log_fd and not self._log_fd.closed:
+            try:
+                self._log_fd.flush()
+                self._log_fd.close()
+            except Exception:
+                pass
+
+    def clear(self):
+        """Remove all WAL files (backup, log, tx dir).  Use only for
+        clean-shutdown or testing.
+        """
+        self.close()
+        for path in (self._backup_path, self._log_path):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+        if os.path.isdir(self._tx_dir):
+            shutil.rmtree(self._tx_dir)
+            os.makedirs(self._tx_dir, exist_ok=True)
+        self._last_seq = 0
+        self._log_fd = open(self._log_path, "a")
