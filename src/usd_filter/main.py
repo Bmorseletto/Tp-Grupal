@@ -28,7 +28,7 @@ NODE_NAME =  os.environ["NODE_NAME"]
 class CurrencyFilter:
     def __init__(self):
         self.input_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
-            MOM_HOST, FILTER_PREFIX, [f"{FILTER_PREFIX}", f"{ID}"]
+            MOM_HOST, FILTER_PREFIX, [f"{FILTER_PREFIX}", f"{ID}"], ID
         )
         self.filter_q_prefixes = [
             os.environ[f"FILTER_Q{i}_PREFIX"] for i in range(1, TOTAL_QUERIES + 1)
@@ -46,6 +46,7 @@ class CurrencyFilter:
                     self.filter_q_prefixes[i] + str(j)
                     for j in range(self.filter_q_amounts[i])
                 ],
+                ID
             )
             for i in range(TOTAL_QUERIES)
         ]
@@ -57,6 +58,7 @@ class CurrencyFilter:
                     FILTER_DATE_PREFIX + str(j)
                     for j in range(FILTER_DATE_AMOUNT)
                 ],
+                ID
             )        
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:

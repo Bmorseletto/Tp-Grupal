@@ -22,14 +22,15 @@ RESULT_QUEUES = os.environ["RESULT_QUEUES"]
 
 
 def handle_client_request(client_socket, message_handler):
+    gateway_consumer_id = "gateway"
     routing_keys = [CURRENCY_PREFIX] + [str(i) for i in range(AMOUNT_CURRENCY_FILTERS)]
     routing_keys_converter = [Q5_PREFIX]
     routing_keys_converter.extend(f"{Q5_PREFIX}{i}" for i in range(AMOUNT_Q5))
     data_output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
-        MOM_HOST, CURRENCY_PREFIX, routing_keys
+        MOM_HOST, CURRENCY_PREFIX, routing_keys, gateway_consumer_id
     )
     data_output_exchange_converter = middleware.MessageMiddlewareExchangeRabbitMQ(
-        MOM_HOST, Q5_PREFIX, routing_keys_converter
+        MOM_HOST, Q5_PREFIX, routing_keys_converter, gateway_consumer_id
     )
     accounts_output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
         MOM_HOST, OUTPUT_QUEUE

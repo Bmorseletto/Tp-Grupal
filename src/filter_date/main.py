@@ -6,7 +6,7 @@ import signal
 import zlib
 
 from common import middleware, message_protocol, heartbeat
-from graph_router import GraphRouterCSV
+from common import middleware, message_protocol
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -27,7 +27,7 @@ class DateFilter:
 
     def __init__(self):
         self.input_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
-            MOM_HOST, FILTER_PREFIX, [f"{FILTER_PREFIX}",FILTER_PREFIX+f"{ID}"]
+            MOM_HOST, FILTER_PREFIX, [f"{FILTER_PREFIX}",FILTER_PREFIX+f"{ID}"], ID
         )
         logging.info(f"PERSONAL ROUTING KEY: {FILTER_PREFIX+f"{ID}"}")
         self.outputs_prefix = OUTPUTS_PREFIX.split(",")
@@ -42,6 +42,7 @@ class DateFilter:
                     self.outputs_prefix[i] + str(j)
                     for j in range(self.outputs_amounts[i])
                 ],
+                ID
             )
             for i in range(len(self.outputs_prefix))
         ]
@@ -55,6 +56,7 @@ class DateFilter:
         logging.debug(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
         logging.debug(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
         logging.debug(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
+        logging.info(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
 
     def _process_data(self, transaction):
         self.counter2 +=1
