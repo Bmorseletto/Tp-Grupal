@@ -5,7 +5,7 @@ import logging
 import bisect
 import signal
 
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -18,6 +18,9 @@ WORKING = False
 NODO_TYPE = 1
 AVG_STORAGE = "/output/q3_avg_"
 UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
 
 class AvgCalculator:
 
@@ -28,16 +31,15 @@ class AvgCalculator:
         self.output_exchange =  middleware.MessageMiddlewareExchangeRabbitMQ(
                 MOM_HOST,
                 OUTPUT_PREFIX,
-                [OUTPUT_PREFIX]
-                + [
-                    OUTPUT_PREFIX + str(j)
-                    for j in range(OUTPUT_AMOUNT)
-                ],
+                [],
                 ID,
                 publish_only=True,
         )
         self.transactions_per_payment_format = {}
         self.eof_count = {}
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _process_data(self, transaction):
         try:
@@ -94,11 +96,15 @@ class AvgCalculator:
         ack()
 
     def start(self):
+        for heartbeat in self.heartbeats:
+                heartbeat.start()
         self.input_exchange.start_consuming(self.process_messsage)
 
     
     def stop(self):
         self.input_exchange.stop_consuming()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
     def close(self):
         self.input_exchange.close()
         self.output_exchange.close()

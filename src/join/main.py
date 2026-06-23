@@ -4,12 +4,15 @@ import logging
 import shutil
 import signal
 
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 
 MOM_HOST = os.environ["MOM_HOST"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 QUERY_AMOUNT = int(os.environ["QUERY_AMOUNT"])
 STATE_DIR = os.environ.get("JOIN_STATE_DIR", "/output/join_state")
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
 
 
 class JoinNode:
@@ -23,6 +26,9 @@ class JoinNode:
         )
         self.received_queries = {}
         self._recover_state()
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _client_dir(self, client_id):
         return os.path.join(STATE_DIR, str(client_id))
@@ -106,10 +112,14 @@ class JoinNode:
             nack()
 
     def start(self):
+        for heartbeat in self.heartbeats:
+                heartbeat.start()
         self.input_queue.start_consuming()
 
     def stop(self):
         self.input_queue.stop_consuming()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
 
     def close(self):
         self.input_queue.close()

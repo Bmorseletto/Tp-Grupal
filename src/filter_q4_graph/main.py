@@ -4,7 +4,7 @@ import signal
 import zlib
 from collections import defaultdict
 
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -13,6 +13,9 @@ OUTPUT_PREFIX = os.environ["OUTPUT_PREFIX"]
 OUTPUT_AMOUNT = int(os.environ["OUTPUT_AMOUNT"])
 FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
 FILTER_DATE_AMOUNT = int(os.environ["FILTER_DATE_AMOUNT"])
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
 SCATTER_VALUE = int(os.environ["SCATTER_VALUE"])
 
 
@@ -27,7 +30,7 @@ class GraphFilter:
         self.output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST,
             OUTPUT_PREFIX,
-            [OUTPUT_PREFIX] + [OUTPUT_PREFIX + str(j) for j in range(OUTPUT_AMOUNT)],
+            [],
             ID,
             publish_only=True,
         )
@@ -43,6 +46,9 @@ class GraphFilter:
         #   }
         # }
         self.destination_groups = {}
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
         # {client_id: {
         #   (dest_bank, dest_account): {
         #       "transactions": {
@@ -154,12 +160,16 @@ class GraphFilter:
         ack()
 
     def start(self):
+        for heartbeat in self.heartbeats:
+                heartbeat.start()
         self.input_exchange.start_consuming(self.process_messsage)
         self.input_exchange.close()
         self.output_exchange.close()
 
     def stop(self):
         self.input_exchange.stop_consuming()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
 
     def close(self):
         self.input_exchange.close()

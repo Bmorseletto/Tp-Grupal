@@ -2,7 +2,7 @@ from collections import defaultdict
 import os
 import logging
 import signal
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -10,6 +10,11 @@ SCATTER_DETECTOR_PREFIX = os.environ["SCATTER_DETECTOR_PREFIX"]
 OUTPUT_PREFIX = os.environ["OUTPUT_PREFIX"]
 OUTPUT_AMOUNT = int(os.environ["OUTPUT_AMOUNT"])
 Q4_GRAPH_AMOUNT = int(os.environ["Q4_GRAPH_AMOUNT"])
+SCATTER_DETECTOR_STORAGE = "/output/q4_scatter_"
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
+
 
 class ScatterGatherDetector:
     def __init__(self):
@@ -28,6 +33,9 @@ class ScatterGatherDetector:
         self.accounts = {}
         self.eof_count = {}
         self.results = {}
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _process_data(self, result):
         client_id = result.get("client_id")
@@ -88,12 +96,16 @@ class ScatterGatherDetector:
         ack()
 
     def start(self):
+        for heartbeat in self.heartbeats:
+                heartbeat.start()
         self.input_exchange.start_consuming(self.process_message)
         self.input_exchange.close()
         self.output_queue.close()
 
     def stop(self):
         self.input_exchange.stop_consuming()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
 
     def close(self):
         try:

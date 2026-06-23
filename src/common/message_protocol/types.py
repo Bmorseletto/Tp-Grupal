@@ -41,6 +41,10 @@ class AccountInfo:
     entity_id: str
     entity_name: str
 
+@dataclass
+class Heartbeat:
+    node_id : str
+
 class MsgType:
     TRANSACTION_RECORD = 1
     ACCOUNT_RECORD = 2
@@ -49,3 +53,4 @@ class MsgType:
     RESULTS = 5
     END_OF_ACCOUNTS = 6
     END_OF_RESULTS = 7
+    HEARTBEAT = 8

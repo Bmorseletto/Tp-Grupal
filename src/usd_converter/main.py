@@ -4,7 +4,7 @@ import signal
 import requests
 import json
 from datetime import datetime
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -12,6 +12,9 @@ OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 FILTER_AMOUNT = int(os.environ["FILTER_AMOUNT"])
 FILTER_PREFIX = os.environ["FILTER_PREFIX"]
 UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
 
 CONVERSION_API_URL = (
     "https://api.frankfurter.dev/v2/rates?from=2022-09-01&to=2022-09-05&base=USD"
@@ -48,6 +51,9 @@ class USDConverter:
         self.conversion_rates = {}
         self._fetch_conversion_rates()
         self.eof_count = {}
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _save_conversion_rates(self):
         try:
@@ -148,12 +154,16 @@ class USDConverter:
         ack()
 
     def start(self):
+        for heartbeat in self.heartbeats:
+                heartbeat.start()
         self.input_exchange.start_consuming(self.process_messsage)
         self.input_exchange.close()
         self.output_queue.close()
 
     def stop(self):
         self.input_exchange.stop_consuming()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
 
     def close(self):
         self.input_exchange.close()

@@ -5,7 +5,7 @@ import signal
 import multiprocessing
 import zlib
 import message_handler
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 from asyncio import IncompleteReadError
 
 SERVER_HOST = os.environ["SERVER_HOST"]
@@ -19,6 +19,10 @@ Q5_PREFIX = os.environ["Q5_PREFIX"]
 AMOUNT_Q5 = int(os.environ["AMOUNT_Q5"])
 QUERY_AMOUNT = int(os.environ["QUERY_AMOUNT"])
 RESULT_QUEUES = os.environ["RESULT_QUEUES"]
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
+
 
 
 def handle_client_request(client_socket, message_handler):
@@ -107,8 +111,8 @@ def _make_result_callback(client_list, queries_remaining):
                     break
             
             if target_index is None:
-                logging.error(f"no matching client for result {client_id}")
-                nack()
+                #logging.error(f"no matching client for result {client_id}")
+                #nack()
                 return
 
             if len(deserialized) == 3:
@@ -141,15 +145,23 @@ def _make_result_callback(client_list, queries_remaining):
     return _consume_result
 
 
-def handle_sigterm(server_socket, client_list, sigterm_received):
+def handle_sigterm(server_socket, client_list, sigterm_received, heartbeats):
     server_socket.shutdown(socket.SHUT_RDWR)
     for [_, client_socket] in client_list:
         client_socket.shutdown(socket.SHUT_RDWR)
+    for heartbeat in heartbeats:
+        heartbeat.stop()
     sigterm_received.value = 1
 
 
 def main():
     logging.basicConfig(level=logging.INFO)
+    heartbeats = []
+    for manager_host in MANAGER_HOSTS:
+        heart = heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT)
+        heartbeats.append(heart)
+        heart.start()
+
 
     with multiprocessing.Manager() as manager:
         client_list = manager.list()

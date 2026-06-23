@@ -3,13 +3,16 @@ import logging
 import signal
 import csv
 
-from common import middleware, message_protocol
+from common import middleware, message_protocol, heartbeat
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 Q4_SCATTER_AMOUNT = int(os.environ["Q4_SCATTER_AMOUNT"])
 RESULTS_STORAGE = "/output/q4_agg_"
+MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
+MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+NODE_NAME =  os.environ["NODE_NAME"]
 
 class AggregatorQ4:
     def __init__(self):
@@ -21,6 +24,9 @@ class AggregatorQ4:
         )
         self.worker_finished_with_client = {}
         self.results = {}
+        self.heartbeats = []
+        for manager_host in MANAGER_HOSTS:
+            self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _process_data(self, result):
         try:
@@ -74,10 +80,15 @@ class AggregatorQ4:
         ack()
 
     def start(self):
+        for heartbeat in self.heartbeats:
+            heartbeat.start()
         self.input_queue.start_consuming(self.process_message)
+
 
     def stop(self):
         self.input_queue.stop_consuming()
+        for heartbeat in self.heartbeats:
+            heartbeat.stop()
 
     def close(self):
         self.input_queue.close()

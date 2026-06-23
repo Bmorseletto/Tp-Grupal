@@ -234,6 +234,14 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
                 self._channel.queue_bind(exchange=self._exchange_name, queue=self._queue_name, routing_key=key)
             self._reassembler = _ChunkReassembler()
             self._consumer_id = consumer_id
+        logging.basicConfig(level=logging.WARNING)
+        logging.info(f"Instanciando nodo con la cola: {self._queue_name}")
+
+    def call_later(self,time, function):
+        return self._conn.call_later(time, function)
+
+    def remove_timeout(self, timer):
+        self._conn.remove_timeout(timer)
 
     def send(self, message):
         try:
@@ -254,8 +262,8 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
             raise MessageMiddlewareMessageError(e)
 
     def send_by_key(self, message, key):
-        if key not in self._routing_keys:
-            raise KeyError(f"{key} not in routing keys")
+        #if key not in self._routing_keys:
+        #    raise KeyError(f"{key} not in routing keys")
         try:
             msg_id = _generate_msg_id(self._source_id)
             _publish_chunked(
@@ -321,6 +329,7 @@ def _start_consuming(message_middleware, on_message_callback):
     reassembler = message_middleware._reassembler
 
     def callback(ch, method, properties, body):
+        message_middleware.set_delivery_tag(method.delivery_tag)
         def ack():
             ch.basic_ack(delivery_tag=method.delivery_tag)
 

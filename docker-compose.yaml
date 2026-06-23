@@ -71,8 +71,9 @@ services:
       dockerfile: gateway/Dockerfile
     container_name: gateway
     depends_on:
-      rabbitmq:
-        condition: service_healthy
+    - manager_0
+    - manager_1
+    - manager_2
     environment:
       - OUTPUT_QUEUE=Query2_Aggregator_accounts
       - MOM_HOST=rabbitmq
@@ -85,6 +86,9 @@ services:
       - AMOUNT_Q5=3
       - QUERY_AMOUNT=5
       - RESULT_QUEUES=Gateway_Q1_Results,Gateway_Q2_Results,Gateway_Q3_Results,Gateway_Q4_Results,Gateway_Q5_Results
+      - NODE_NAME=gateway
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   currency_filter_0:
     build:
       context: ./src/
@@ -118,6 +122,9 @@ services:
       - FILTER_Q3_PREFIX=DateFilterQ3
       - FILTER_Q3_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=currency_filter_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   currency_filter_1:
     build:
       context: ./src/
@@ -151,6 +158,9 @@ services:
       - FILTER_Q3_PREFIX=DateFilterQ3
       - FILTER_Q3_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=currency_filter_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   currency_filter_2:
     build:
       context: ./src/
@@ -184,6 +194,9 @@ services:
       - FILTER_Q3_PREFIX=DateFilterQ3
       - FILTER_Q3_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=currency_filter_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   dollar_amount_filter_0:
     build:
       context: ./src/
@@ -199,6 +212,9 @@ services:
       - FILTER_PREFIX=DollarAmtFilter
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=dollar_amount_filter_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   dollar_amount_filter_1:
     build:
       context: ./src/
@@ -214,6 +230,9 @@ services:
       - FILTER_PREFIX=DollarAmtFilter
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=dollar_amount_filter_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   dollar_amount_filter_2:
     build:
       context: ./src/
@@ -229,6 +248,9 @@ services:
       - FILTER_PREFIX=DollarAmtFilter
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=dollar_amount_filter_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   query_1_aggregator:
     build:
       context: ./src/
@@ -244,6 +266,9 @@ services:
       - Q1_FILTER_AMOUNT=3
       - Q1_FILTER_PREFIX=DollarAmtFilter
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_1_aggregator
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   query_2_aggregator:
@@ -261,6 +286,9 @@ services:
       - Q2_FILTER_AMOUNT=3
       - Q2_FILTER_PREFIX=MaxTransactionFilter
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_2_aggregator
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   max_transaction_filter_0:
@@ -278,6 +306,9 @@ services:
       - FILTER_PREFIX=MaxTransactionFilter
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=max_transaction_filter_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   max_transaction_filter_1:
     build:
       context: ./src/
@@ -293,6 +324,9 @@ services:
       - FILTER_PREFIX=MaxTransactionFilter
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=max_transaction_filter_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   max_transaction_filter_2:
     build:
       context: ./src/
@@ -308,6 +342,9 @@ services:
       - FILTER_PREFIX=MaxTransactionFilter
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=max_transaction_filter_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     ###############################
   #           QUERY 3           #
   ###############################
@@ -326,6 +363,9 @@ services:
       - Q3_FILTER_AMOUNT=3
       - Q3_FILTER_PREFIX=AvgFilter
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_3_aggregator
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   query_3_avg_filter_0:
@@ -344,6 +384,9 @@ services:
       - AVG_CALC_AMOUNT=3     
       - DATE_FILTER_AMOUNT=3  
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_3_avg_filter_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
 
@@ -355,7 +398,7 @@ services:
     depends_on:
       - query_3_aggregator
     environment:
-      - ID=1                    # Nuevo ID
+      - ID=1                    
       - MOM_HOST=rabbitmq
       - FILTER_AMOUNT=3
       - FILTER_PREFIX=AvgFilter
@@ -363,6 +406,9 @@ services:
       - AVG_CALC_AMOUNT=3
       - DATE_FILTER_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_3_avg_filter_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   query_3_avg_filter_2:
@@ -373,7 +419,7 @@ services:
     depends_on:
       - query_3_aggregator
     environment:
-      - ID=2                 # Nuevo ID
+      - ID=2                 
       - MOM_HOST=rabbitmq
       - FILTER_AMOUNT=3
       - FILTER_PREFIX=AvgFilter
@@ -381,6 +427,9 @@ services:
       - AVG_CALC_AMOUNT=3
       - DATE_FILTER_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_3_avg_filter_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
 
@@ -405,6 +454,9 @@ services:
       - OUTPUT_AMOUNT=3        # Envía a 2 AvgFilters
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_3_avg_calc_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
 
@@ -426,6 +478,9 @@ services:
       - OUTPUT_AMOUNT=3
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_3_avg_calc_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   
@@ -447,6 +502,9 @@ services:
       - OUTPUT_AMOUNT=3
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_3_avg_calc_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
 
@@ -467,12 +525,15 @@ services:
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilterQ3
       - OUTPUTS_PREFIX=AvgFilter
-      - OUTPUTS_AMOUNTS=3     # Envía a 2 AvgFilters
+      - OUTPUTS_AMOUNTS=3 
       - UPSTREAM_AMOUNT=3
       - ROUTING_HASH_TARGET=account
       - INITIAL_DATE=2022/09/06
       - END_DATE=2022/09/15
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_3_date_filter_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
 
   query_3_date_filter_1:
     build:
@@ -484,7 +545,7 @@ services:
       - query_3_avg_filter_1
       - query_3_avg_filter_2
     environment:
-      - ID=1                    # Nuevo ID
+      - ID=1                    
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilterQ3
       - OUTPUTS_PREFIX=AvgFilter
@@ -494,6 +555,9 @@ services:
       - INITIAL_DATE=2022/09/06
       - END_DATE=2022/09/15
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_3_date_filter_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   query_3_date_filter_2:
     build:
       context: ./src/
@@ -514,6 +578,9 @@ services:
       - INITIAL_DATE=2022/09/06
       - END_DATE=2022/09/15
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_3_date_filter_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
 
 
   # ==========================================
@@ -542,6 +609,9 @@ services:
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=date_filter_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
 
   date_filter_1:
     build:
@@ -566,6 +636,9 @@ services:
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=date_filter_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   date_filter_2:
     build:
       context: ./src/
@@ -591,6 +664,9 @@ services:
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=date_filter_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   ##############################################
   ############## Query 4 #######################
   query_4_graph_0:
@@ -612,6 +688,9 @@ services:
       - FILTER_DATE_AMOUNT=3
       - SCATTER_VALUE=5
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_4_graph_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
 
@@ -634,6 +713,9 @@ services:
       - FILTER_DATE_AMOUNT=3
       - SCATTER_VALUE=5
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_4_graph_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   query_4_graph_2:
@@ -655,6 +737,9 @@ services:
       - FILTER_DATE_AMOUNT=3
       - SCATTER_VALUE=5
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_4_graph_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   query_4_scatter_detector_0:
@@ -673,6 +758,9 @@ services:
       - OUTPUT_AMOUNT=1
       - Q4_GRAPH_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_4_scatter_detector_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   query_4_scatter_detector_1:
@@ -691,6 +779,9 @@ services:
       - OUTPUT_AMOUNT=1
       - Q4_GRAPH_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_4_scatter_detector_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   query_4_scatter_detector_2:
@@ -709,6 +800,9 @@ services:
       - OUTPUT_AMOUNT=1
       - Q4_GRAPH_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_4_scatter_detector_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   query_4_agg:
@@ -726,6 +820,9 @@ services:
       - OUTPUT_QUEUE=Gateway_Q4_Results
       - Q4_SCATTER_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_4_agg
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   ##############################################
@@ -744,6 +841,9 @@ services:
       - FILTER_AMOUNT=3
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=usd_converter_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   usd_converter_1:
@@ -761,6 +861,9 @@ services:
       - FILTER_AMOUNT=3
       - UPSTREAM_AMOUNT=3 
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=usd_converter_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   usd_converter_2:
@@ -778,6 +881,9 @@ services:
       - FILTER_AMOUNT=3
       - UPSTREAM_AMOUNT=3 
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=usd_converter_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   query_5_aggregator:
@@ -795,6 +901,9 @@ services:
       - Q5_FILTER_AMOUNT=3
       - Q5_FILTER_PREFIX=USDConverter
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_5_aggregator
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
     volumes:
       - ./output:/output
   query_5_date_filter_0:
@@ -815,6 +924,9 @@ services:
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_5_date_filter_0
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   query_5_date_filter_1:
     build:
       context: ./src/
@@ -833,6 +945,9 @@ services:
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_5_date_filter_1
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   query_5_date_filter_2:
     build:
       context: ./src/
@@ -851,6 +966,9 @@ services:
       - INITIAL_DATE=2022/09/01
       - END_DATE=2022/09/05
       - PYTHONUNBUFFERED=1
+      - NODE_NAME=query_5_date_filter_2
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   rabbitmq:
     build:
       context: ./src/rabbitmq
@@ -867,3 +985,49 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
+  ### HEATBEAT MANAGERS ###
+  manager_0:
+    build:
+      context: ./src/
+      dockerfile: node_manager/Dockerfile
+    container_name: manager_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - ID=0
+      - MANAGER_HOST=manager_0
+      - MANAGER_PORT=5679
+      - MOM_HOST=rabbitmq
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  manager_1:
+    build:
+      context: ./src/
+      dockerfile: node_manager/Dockerfile
+    container_name: manager_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - ID=1
+      - MANAGER_HOST=manager_1
+      - MANAGER_PORT=5679
+      - MOM_HOST=rabbitmq
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  manager_2:
+    build:
+      context: ./src/
+      dockerfile: node_manager/Dockerfile
+    container_name: manager_2
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - ID=2
+      - MANAGER_HOST=manager_2
+      - MANAGER_PORT=5679
+      - MOM_HOST=rabbitmq
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
