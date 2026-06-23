@@ -71,8 +71,9 @@ services:
       dockerfile: gateway/Dockerfile
     container_name: gateway
     depends_on:
-      rabbitmq:
-        condition: service_healthy
+    - manager_0
+    - manager_1
+    - manager_2
     environment:
       - OUTPUT_QUEUE=Query2_Aggregator_accounts
       - MOM_HOST=rabbitmq
@@ -85,6 +86,9 @@ services:
       - AMOUNT_Q5=3
       - QUERY_AMOUNT=5
       - RESULT_QUEUES=Gateway_Q1_Results,Gateway_Q2_Results,Gateway_Q3_Results,Gateway_Q4_Results,Gateway_Q5_Results
+      - NODE_NAME=gateway
+      - MANAGER_HOSTS=manager_0,manager_1,manager_2
+      - MANAGER_PORT=5679
   currency_filter_0:
     build:
       context: ./src/
