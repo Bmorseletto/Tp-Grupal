@@ -31,6 +31,7 @@ class NodeManagerIntercomm:
             host=mom_host,
             exchange_name="bully_election",
             routing_keys=[f"manager{self.id}", "leader"],
+            consumer_id = self.id,
             exchange_type="topic"
         )
         self.voting_status = status
