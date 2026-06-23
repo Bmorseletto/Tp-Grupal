@@ -37,11 +37,7 @@ class DateFilter:
             middleware.MessageMiddlewareExchangeRabbitMQ(
                 MOM_HOST,
                 self.outputs_prefix[i],
-                [self.outputs_prefix[i]]
-                + [
-                    self.outputs_prefix[i] + str(j)
-                    for j in range(self.outputs_amounts[i])
-                ],
+                [],
                 ID
             )
             for i in range(len(self.outputs_prefix))

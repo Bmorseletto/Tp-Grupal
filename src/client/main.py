@@ -5,6 +5,7 @@ import socket
 import signal
 import threading
 from pathlib import Path
+import time
 from common import message_protocol
 from datetime import datetime
 
@@ -23,6 +24,14 @@ class Client:
         self._socket_lock = threading.Lock()
         self._send_error = None
         self._prev_sigterm_handler = signal.signal(signal.SIGTERM, self.handle_sigterm)
+        self.server_socket = None
+        OUTPUT_FILE
+        filepath = Path(OUTPUT_FILE)
+        name = filepath.name
+        for i in range(1,6):
+            query_id = f"q{i}"
+            if os.path.isfile(filepath.with_name(f"{query_id}_{name}")):
+                os.remove(filepath.with_name(f"{query_id}_{name}"))
 
     def handle_sigterm(self, signum, frame):
         logging.warning("Received SIGTERM signal")
@@ -38,7 +47,11 @@ class Client:
 
     def disconnect(self):
         if self.server_socket:
-            self.server_socket.shutdown(socket.SHUT_RDWR)
+            try:
+                self.server_socket.shutdown(socket.SHUT_RDWR)
+                self.server_socket.close()
+            except socket.error:
+                pass
 
     def _send_and_wait_ack(self, msg_type, *args):
         with self._socket_lock:
@@ -166,10 +179,12 @@ def send_data(client):
 
 def main() -> int:
     logging.basicConfig(level=logging.WARNING)
-    client = Client()
 
     while True:
+        client = Client()
+        send_thread = None
         try:
+            
             start = datetime.now()
             client.connect(SERVER_HOST, SERVER_PORT)
 
@@ -184,27 +199,22 @@ def main() -> int:
             send_thread.join()
             middle = datetime.now()
             logging.warning(f"Time elapsed: {middle - start}")
-        except socket.error as e:
+            if client.done:
+                middle = datetime.now()
+                logging.warning(f"Proceso completado con éxito. Time elapsed: {middle - start}")
+                break
+        except (socket.error, BrokenPipeError) as e:
             if not client.closed:
                 logging.error(f"The connection with the server was lost {e}")
-                # try to reconnect
-                for i in range(5):
-                    try:
-                        client.connect(SERVER_HOST, SERVER_PORT)
-                        client.recv_results(OUTPUT_FILE)
-                        break
-                    except socket.error:
-                        logging.error(f"Reconnection attempt {i+1} failed")
+                client.disconnect()
+                time.sleep(1)
         except Exception:
             logging.exception("An error occurred while running the client")
-            # return 2
+            client.disconnect()
+            return 2
         finally:
-            if not client.closed:
-                client.disconnect()
-            if send_thread.is_alive():
-                send_thread.join()
-        if client.done:
-            break
+           if send_thread and send_thread.is_alive():
+               send_thread.join(timeout=1)
 
     return 0
 

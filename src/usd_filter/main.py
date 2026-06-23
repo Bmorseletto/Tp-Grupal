@@ -41,11 +41,7 @@ class CurrencyFilter:
             middleware.MessageMiddlewareExchangeRabbitMQ(
                 MOM_HOST,
                 self.filter_q_prefixes[i],
-                [self.filter_q_prefixes[i]]
-                + [
-                    self.filter_q_prefixes[i] + str(j)
-                    for j in range(self.filter_q_amounts[i])
-                ],
+                [],
                 ID
             )
             for i in range(TOTAL_QUERIES)
@@ -53,11 +49,7 @@ class CurrencyFilter:
         self.date_filter_exchange =  middleware.MessageMiddlewareExchangeRabbitMQ(
                 MOM_HOST,
                 FILTER_DATE_PREFIX,
-                [FILTER_DATE_PREFIX]
-                + [
-                    FILTER_DATE_PREFIX + str(j)
-                    for j in range(FILTER_DATE_AMOUNT)
-                ],
+                [],
                 ID
             )        
         self.heartbeats = []

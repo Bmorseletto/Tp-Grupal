@@ -43,6 +43,7 @@ class DollarAmtFilter:
                 "to_account": transaction["to_account"],
                 "amount_paid": transaction["amount_paid"],
             }
+            #logging.info(f"transaction {transaction}")
             self.output_queue.send(message_protocol.internal.serialize(output))
 
     def _process_eof(self, deserialized_message):

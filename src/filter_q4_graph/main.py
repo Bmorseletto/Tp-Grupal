@@ -30,7 +30,7 @@ class GraphFilter:
         self.output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST,
             OUTPUT_PREFIX,
-            [OUTPUT_PREFIX] + [OUTPUT_PREFIX + str(j) for j in range(OUTPUT_AMOUNT)],
+            [],
             ID
         )
         self.eof_count = {}

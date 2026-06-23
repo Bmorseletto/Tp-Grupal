@@ -192,10 +192,10 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
         self._channel = self._conn.channel()
         self._exchange_name = exchange_name
         self._channel.exchange_declare(exchange=self._exchange_name, exchange_type=exchange_type, durable=True)
-        # result = self._channel.queue_declare(queue="", durable=True)
-        # self._queue_name = result.method.queue
+        #result = self._channel.queue_declare(queue="", durable=True)
+        #self._queue_name = result.method.queue
         self._queue_name = f"{exchange_name}_consumer_{consumer_id}"
-        self._channel.queue_declare(queue=self._queue_name, durable=True)
+        self._channel.queue_declare(queue=self._queue_name,durable=True)
         for key in routing_keys:
             self._channel.queue_bind(exchange=self._exchange_name, queue=self._queue_name, routing_key=key)
         self._routing_keys = routing_keys
@@ -203,6 +203,8 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
         self._consumer_tag = None
         self._channel.confirm_delivery()
         self._reassembler = _ChunkReassembler()
+        logging.basicConfig(level=logging.WARNING)
+        logging.info(f"Instanciando nodo con la cola: {self._queue_name}")
 
     def call_later(self,time, function):
         return self._conn.call_later(time, function)
@@ -289,11 +291,11 @@ def _start_consuming(message_middleware, on_message_callback):
     reassembler = message_middleware._reassembler
 
     def callback(ch, method, properties, body):
+        message_middleware.set_delivery_tag(method.delivery_tag)
         def ack():
             ch.basic_ack(delivery_tag=method.delivery_tag)
-
         reassembler.process(body, ack, ch.basic_nack, on_message_callback)
-        message_middleware.set_delivery_tag(method.delivery_tag)
+       
 
     message_middleware._channel.basic_qos(prefetch_count=100)
     consumer_tag = message_middleware._channel.basic_consume(
