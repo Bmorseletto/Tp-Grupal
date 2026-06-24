@@ -121,7 +121,11 @@ class WAL:
                 for line in f:
                     line = line.rstrip("\n")
                     if line:
-                        self._last_seq += 1
+                        parts = line.split("\t", 1)
+                        if parts and parts[0].strip():
+                            seq = int(parts[0])
+                            if seq > self._last_seq:
+                                self._last_seq = seq
         self._log_fd = open(self._log_path, "a")
 
     def append(self, msg_id, record):
