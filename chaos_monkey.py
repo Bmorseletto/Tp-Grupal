@@ -51,13 +51,13 @@ def filter_worker_containers(containers: List[str], excluded_patterns: List[str]
 def kill_container(container_name: str) -> bool:
     try:
         # Stop the container
-        result = subprocess.run(
-            ['docker', 'stop', container_name],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        print(f"Container {container_name} stopped | result {result.returncode}")
+        # result = subprocess.run(
+        #     ['docker', 'stop', container_name],
+        #     capture_output=True,
+        #     text=True,
+        #     check=True
+        # )
+        # print(f"Container {container_name} stopped | result {result.returncode}")
         
         # Kill the container
         result = subprocess.run(
@@ -110,14 +110,14 @@ def main():
     parser.add_argument(
         '--interval',
         type=int,
-        default=5,
-        help='Interval in seconds between each attack (default: 5)'
+        default=10,
+        help='Interval in seconds between each attack (default: 10)'
     )
     parser.add_argument(
         '--exclude',
         type=str,
         nargs='+',
-        default=[],
+        default=["client", "gateway"],
         help='Pattern containers to exclude from chaos attacks (rabbitmq is always excluded). Example: --exclude client gateway'
     )
     
