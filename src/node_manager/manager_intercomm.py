@@ -113,7 +113,7 @@ class NodeManagerIntercomm:
             self.exchange.remove_timeout(self.heartbeat_timer)
             self.heartbeat_timer = None
 
-    def _callback(self, message,  ack, nack):
+    def _callback(self, message,  ack, nack, ctx):
         msg = message_protocol.internal.deserialize(message)
         msg_type = msg["type"]
         

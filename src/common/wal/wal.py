@@ -79,14 +79,15 @@ class WAL:
         wal = WAL("/data/agg_q5_wal")
 
         # ---- startup / recovery ----
-        state, _ = wal.backup_load(default=({"count": {},"workers": {}}, 0))
+        state, _, processed_ids = wal.backup_load(default=({"count": {},"workers": {}}, 0, set()))
         wal.recover(apply_fn=lambda entry, st: my_apply(entry, st),
                     state=state)
+        # wal.processed_ids is now populated from backup + replayed log
 
         # ---- on receive ----
         def on_message(msg, ack, nack, ctx):
             msg_id = ctx["msg_id"]
-            if msg_id in wal.orphan_tx_ids():
+            if msg_id in wal.processed_ids:
                 ack()
                 return
             # update state, send downstream
@@ -94,6 +95,7 @@ class WAL:
             wal.tx_begin(msg_id)
             output.send(serialized)
             wal.tx_commit(msg_id)
+            wal.processed_ids.add(msg_id)
             ack()
 
         # ---- periodic checkpoint ----
@@ -110,6 +112,7 @@ class WAL:
         self._lock = threading.Lock()
         self._last_seq = 0
         self._log_fd = None
+        self.processed_ids = set()
         self._init_log()
 
     def _init_log(self):
@@ -163,30 +166,25 @@ class WAL:
                 yield seq, msg_id, record
 
     def truncate(self, up_to_seq):
-        """Remove log entries with seq <= *up_to_seq*.
-
-        Only called after a successful ``backup_save`` — the backup
-        supersedes those entries.
-        """
-        tmp_path = self._log_path + ".tmp"
-        kept = 0
         try:
-            with open(self._log_path, "r") as src, \
-                 open(tmp_path, "w") as dst:
-                for line in src:
-                    parts = line.split("\t", 1)
-                    if parts and int(parts[0]) > up_to_seq:
-                        dst.write(line)
-                        kept += 1
-            os.replace(tmp_path, self._log_path)
-            logger.debug("truncated log up to seq %d (%d entries kept)",
-                         up_to_seq, kept)
-        except Exception:
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
-            raise
+            with open(self._log_path, "r") as f:
+                lines = f.readlines()
+        except FileNotFoundError:
+            return
+        kept = [l for l in lines if l.split("\t", 1) and l.split("\t", 1)[0].strip() and int(l.split("\t", 1)[0]) > up_to_seq]
+        if self._log_fd and not self._log_fd.closed:
+            self._log_fd.flush()
+            self._log_fd.close()
+        with open(self._log_path, "w") as f:
+            f.writelines(kept)
+        self._log_fd = open(self._log_path, "a")
+        logger.debug("truncated log up to seq %d (%d entries kept)",
+                     up_to_seq, len(kept))
+
+    def checkpoint(self, state, interval=500):
+        if self._last_seq % interval == 0:
+            self.backup_save(state, self._last_seq)
+            self.truncate(self._last_seq)
 
     def tx_begin(self, msg_id):
         """Create a transaction file for *msg_id* BEFORE sending downstream.
@@ -232,11 +230,14 @@ class WAL:
                 result.add(msg_id)
         return result
 
-    def backup_save(self, state, last_seq):
-        """Atomically write a checkpoint: the full reconstructed *state*
-        and the log *last_seq* up to which the backup is valid.
+    def backup_save(self, state, last_seq, processed_ids=None):
+        """Atomically write a checkpoint: the full reconstructed *state*,
+        the log *last_seq* up to which the backup is valid, and the
+        set of *processed_ids* seen so far (for dedup on redelivery).
         """
-        payload = _dumps({"state": state, "last_seq": last_seq}).encode("utf-8")
+        if processed_ids is None:
+            processed_ids = self.processed_ids
+        payload = _dumps({"state": state, "last_seq": last_seq, "processed_ids": processed_ids}).encode("utf-8")
         fd, tmp = tempfile.mkstemp(dir=self._dir, prefix=".bak_")
         try:
             os.write(fd, payload)
@@ -249,13 +250,14 @@ class WAL:
     def backup_load(self, default=None):
         """Load the latest checkpoint.
 
-        Returns ``(state, last_seq)``.  If no backup exists, returns
-        *default* (typically ``(initial_state, 0)``).
+        Returns ``(state, last_seq, processed_ids)``.  If no backup exists,
+        returns *default* (typically ``(initial_state, 0, set())``).
+        Legacy backups without ``processed_ids`` return an empty set.
         """
         try:
             with open(self._backup_path, "rb") as f:
                 data = _loads(f.read().decode("utf-8"))
-            return data["state"], data["last_seq"]
+            return data["state"], data["last_seq"], data.get("processed_ids", set())
         except FileNotFoundError:
             return default
         except (json.JSONDecodeError, KeyError, OSError) as e:
@@ -265,24 +267,32 @@ class WAL:
     def recover(self, apply_fn, state):
         """Recover state after a crash.
 
-        1. Orphan ``.tx`` files are discovered (their msg_ids are
+        1. Load backup's ``processed_ids`` into ``self.processed_ids``.
+        2. Orphan ``.tx`` files are discovered (their msg_ids are
            available via ``orphan_tx_ids()``).  The service uses this to
            skip already-processed messages.
-        2. Log entries after the backup point are replayed into *state*
-           by calling ``apply_fn(entry, state)`` for each one.
+        3. Log entries after the backup point are replayed into *state*
+           by calling ``apply_fn(entry, state)`` for each one.  Each
+           entry's ``msg_id`` (if not ``None``) is added to
+           ``self.processed_ids`` for redelivery dedup.
 
         Returns the set of orphan msg_ids found.
         """
         orphans = self.orphan_tx_ids()
-        _, backup_seq = self.backup_load(default=(None, 0))
+        backup_result = self.backup_load(default=(None, 0, set()))
+        _, backup_seq, backup_processed = backup_result
         if backup_seq is None:
             backup_seq = 0
+        if backup_processed:
+            self.processed_ids = backup_processed
 
         replayed = 0
         for _seq, _msg_id, record in self.read_entries(after_seq=backup_seq):
             try:
                 apply_fn(record, state)
                 replayed += 1
+                if _msg_id and _msg_id != "None":
+                    self.processed_ids.add(_msg_id)
             except Exception:
                 logger.warning("failed to replay log entry seq=%d msg_id=%s",
                                _seq, _msg_id, exc_info=True)
@@ -318,4 +328,5 @@ class WAL:
             shutil.rmtree(self._tx_dir)
             os.makedirs(self._tx_dir, exist_ok=True)
         self._last_seq = 0
+        self.processed_ids = set()
         self._log_fd = open(self._log_path, "a")

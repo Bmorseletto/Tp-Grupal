@@ -1,3 +1,4 @@
+import os
 import pika
 import logging
 import threading
@@ -24,7 +25,31 @@ def _generate_msg_id(source_id):
         _generate_msg_id._counters = {}
     seq = _generate_msg_id._counters.get(source_id, 0)
     _generate_msg_id._counters[source_id] = seq + 1
-    return f"{source_id}_{seq}"
+    return f"{source_id}_{os.getpid()}_{seq}"
+
+
+def _init_msg_id_counters(counters):
+    """Initialize msg_id counters (e.g. from WAL backup).
+
+    Only sets counters that are not already present, so existing
+    in-memory counters are never overwritten.
+    """
+    if not hasattr(_generate_msg_id, "_counters"):
+        _generate_msg_id._counters = {}
+    for source_id, seq in counters.items():
+        current = _generate_msg_id._counters.get(source_id, 0)
+        _generate_msg_id._counters[source_id] = max(current, seq)
+
+
+def get_msg_id_counters():
+    """Return a copy of the current msg_id counters dict.
+
+    Services should save this in their WAL backup so that on restart
+    the counter continues from where it left off (avoiding ID collisions).
+    """
+    if not hasattr(_generate_msg_id, "_counters"):
+        _generate_msg_id._counters = {}
+    return dict(_generate_msg_id._counters)
 
 
 def _build_properties(msg_id, delivery_mode=2):

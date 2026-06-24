@@ -14,6 +14,7 @@ def test_fresh_wal():
         wal = WAL(tmpdir)
         assert wal.last_seq() == 0
         assert wal.orphan_tx_ids() == set()
+        assert wal.processed_ids == set()
         wal.close()
     finally:
         shutil.rmtree(tmpdir)
@@ -68,17 +69,35 @@ def test_orphan_tx_survives_crash():
         shutil.rmtree(tmpdir)
 
 
-def test_backup_save_load():
+def test_backup_save_load_3tuple():
     tmpdir = tempfile.mkdtemp(prefix="wal_test_")
     try:
         wal = WAL(tmpdir)
-        state = {"count": {1: 300}, "workers": {1: {"w1", "w2"}}}
+        state = {"count": {1: 300}, "workers": {1: {"w1", "w2"}}, "__msg_counters": {"src": 5}}
+        pids = {"src_0_0", "src_0_1"}
+        wal.processed_ids = pids
         wal.backup_save(state, 2)
 
-        loaded_state, loaded_seq = wal.backup_load(default=({}, 0))
+        loaded_state, loaded_seq, loaded_pids = wal.backup_load(default=({}, 0, set()))
         assert loaded_state == state, f"expected {state}, got {loaded_state}"
         assert loaded_seq == 2
+        assert loaded_pids == pids
         assert isinstance(loaded_state["workers"][1], set)
+        assert isinstance(loaded_pids, set)
+        wal.close()
+    finally:
+        shutil.rmtree(tmpdir)
+
+
+def test_backup_load_default_3tuple():
+    tmpdir = tempfile.mkdtemp(prefix="wal_test_")
+    try:
+        wal = WAL(tmpdir)
+        default = ({"x": 1}, 0, set())
+        state, seq, pids = wal.backup_load(default=default)
+        assert state == {"x": 1}
+        assert seq == 0
+        assert pids == set()
         wal.close()
     finally:
         shutil.rmtree(tmpdir)
@@ -105,11 +124,34 @@ def test_recover_with_apply_fn():
             cid = record["client_id"]
             st["count"][cid] = st["count"].get(cid, 0) + record["amount"]
 
-        backup_state, _ = wal2.backup_load(default=({}, 0))
+        backup_state, _, _ = wal2.backup_load(default=({}, 0, set()))
         orphans = wal2.recover(apply_fn, backup_state)
         assert backup_state["count"][1] == 300
         assert backup_state["count"][2] == 125
         assert "src_0_3" in orphans
+        wal2.close()
+    finally:
+        shutil.rmtree(tmpdir)
+
+
+def test_recover_populates_processed_ids():
+    tmpdir = tempfile.mkdtemp(prefix="wal_test_")
+    try:
+        wal = WAL(tmpdir)
+        wal.append("src_0_0", {"type": "data", "client_id": 1, "amount": 100})
+        wal.append("src_0_1", {"type": "data", "client_id": 1, "amount": 200})
+        state = {"count": {}}
+        wal.backup_save(state, 2, processed_ids={"src_0_0", "src_0_1"})
+        wal.append("src_0_10", {"type": "data", "client_id": 2, "amount": 50})
+        wal.close()
+
+        wal2 = WAL(tmpdir)
+        backup_state, _, _ = wal2.backup_load(default=({}, 0, set()))
+        assert wal2.processed_ids == set()
+        wal2.recover(lambda record, st: None, backup_state)
+        assert "src_0_0" in wal2.processed_ids
+        assert "src_0_1" in wal2.processed_ids
+        assert "src_0_10" in wal2.processed_ids
         wal2.close()
     finally:
         shutil.rmtree(tmpdir)
@@ -139,23 +181,27 @@ def test_clear():
         wal.append("src_0_0", {"client_id": 1})
         wal.tx_begin("src_0_1")
         wal.backup_save({"x": 1}, 1)
+        wal.processed_ids.add("src_0_0")
 
         wal.clear()
         assert wal.last_seq() == 0
         assert wal.orphan_tx_ids() == set()
+        assert wal.processed_ids == set()
         assert wal.backup_load(default=None) is None
         wal.close()
     finally:
         shutil.rmtree(tmpdir)
 
 
-# if __name__ == "__main__":
-#     test_fresh_wal()
-#     test_append_and_read()
-#     test_tx_begin_commit()
-#     test_orphan_tx_survives_crash()
-#     test_backup_save_load()
-#     test_recover_with_apply_fn()
-#     test_truncate()
-#     test_clear()
-#     print("ALL TESTS PASSED")
+if __name__ == "__main__":
+    test_fresh_wal()
+    test_append_and_read()
+    test_tx_begin_commit()
+    test_orphan_tx_survives_crash()
+    test_backup_save_load_3tuple()
+    test_backup_load_default_3tuple()
+    test_recover_with_apply_fn()
+    test_recover_populates_processed_ids()
+    test_truncate()
+    test_clear()
+    print("ALL TESTS PASSED")
