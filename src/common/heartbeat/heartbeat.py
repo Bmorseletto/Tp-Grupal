@@ -1,5 +1,7 @@
 import multiprocessing
+import signal
 import socket
+import threading
 import time
 
 from common import message_protocol
@@ -10,29 +12,38 @@ class Heartbeat:
         self.node_id = node_id
         self.manager_host= manager_host
         self.manager_port = manager_port
-        self.heartbeat_process = None
+        self.heartbeat_thread = None
+        self.beat = False
+        self.stop_event = threading.Event()
 
     def start(self):
-            self.heartbeat_process = multiprocessing.Process(
-                target=_heartbeat, 
-                args=(self.manager_host, self.manager_port, self.node_id,), daemon=True
-            )
-            self.heartbeat_process.start()
+            self.beat = True
+            self.heartbeat_thread = threading.Thread(target=self._heartbeat, daemon=True)
+            self.heartbeat_thread.start()
 
     def stop(self):
-        if self.heartbeat_process != None:
-           self.heartbeat_process.terminate()
-           self.heartbeat_process.join()
+        self.stop_event.set()
+        if self.heartbeat_thread:
+           self.heartbeat_thread.join()
 
-def _heartbeat(manager_host, manager_port, node_id):
-    while True:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((manager_host, manager_port))
-                while True:
-                    message_protocol.external.send_msg(
-                        s, message_protocol.external.MsgType.HEARTBEAT, node_id
-                    )
-                    time.sleep(HEARTBEAT_SLEEP)
-        except Exception as e:
-            time.sleep(HEARTBEAT_SLEEP)
+    def _heartbeat(self):
+            while not self.stop_event.is_set():
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as manager_socket:
+                        manager_socket.settimeout(5)
+                        manager_socket.connect((self.manager_host, self.manager_port))
+                        
+                        while not self.stop_event.is_set():
+                            message_protocol.external.send_msg(
+                                manager_socket, message_protocol.external.MsgType.HEARTBEAT, self.node_id
+                            )
+                            self.stop_event.wait(timeout=5)
+                        try:
+                            message_protocol.external.send_msg(
+                                manager_socket, message_protocol.external.MsgType.HEARTBEAT, ""
+                            )
+                        except Exception:
+                            pass 
+                            
+                except Exception as e:
+                    self.stop_event.wait(timeout=HEARTBEAT_SLEEP)

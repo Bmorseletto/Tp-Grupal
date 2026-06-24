@@ -55,11 +55,18 @@ class Client:
 
     def _send_and_wait_ack(self, msg_type, *args):
         with self._socket_lock:
+            if self.closed:
+                return
             if self._send_error:
                 raise self._send_error
-            message_protocol.external.send_msg(
-                self.server_socket, msg_type, *args
-            )
+            try:
+                message_protocol.external.send_msg(
+                    self.server_socket, msg_type, *args
+                )
+            except (socket.error, BrokenPipeError, OSError, ValueError) as e:
+                if self.closed:
+                    return
+                raise e
             #message_protocol.external.recv_msg(self.server_socket)
 
     def _send_account_records(self, accounts_file):
@@ -68,6 +75,8 @@ class Client:
                 csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
                 _headers = next(csv_reader)
                 for row in csv_reader:
+                    if self.closed:
+                        break
                     (
                         bank_name,
                         bank_id,
@@ -96,7 +105,10 @@ class Client:
         with open(transactions_file, newline="\n") as csvfile:
             csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
             _headers = next(csv_reader)
+            
             for row in csv_reader:
+                if self.closed:
+                    break
                 (
                     timestamp,
                     og_bank,
@@ -208,6 +220,8 @@ def main() -> int:
                 logging.error(f"The connection with the server was lost {e}")
                 client.disconnect()
                 time.sleep(1)
+            else:
+                break
         except Exception:
             logging.exception("An error occurred while running the client")
             client.disconnect()

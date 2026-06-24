@@ -31,10 +31,10 @@ def handle_client_request(client_socket, message_handler):
     routing_keys_converter = [Q5_PREFIX]
     routing_keys_converter.extend(f"{Q5_PREFIX}{i}" for i in range(AMOUNT_Q5))
     data_output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
-        MOM_HOST, CURRENCY_PREFIX, routing_keys, gateway_consumer_id
+        MOM_HOST, CURRENCY_PREFIX, [], gateway_consumer_id
     )
     data_output_exchange_converter = middleware.MessageMiddlewareExchangeRabbitMQ(
-        MOM_HOST, Q5_PREFIX, routing_keys_converter, gateway_consumer_id
+        MOM_HOST, Q5_PREFIX, [], gateway_consumer_id
     )
     accounts_output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
         MOM_HOST, OUTPUT_QUEUE
@@ -146,12 +146,13 @@ def _make_result_callback(client_list, queries_remaining):
 
 
 def handle_sigterm(server_socket, client_list, sigterm_received, heartbeats):
+    sigterm_received.value = 1
+    for heartbeat in heartbeats:
+        heartbeat.stop()
     server_socket.shutdown(socket.SHUT_RDWR)
     for [_, client_socket] in client_list:
         client_socket.shutdown(socket.SHUT_RDWR)
-    for heartbeat in heartbeats:
-        heartbeat.stop()
-    sigterm_received.value = 1
+    
 
 
 def main():
@@ -176,7 +177,7 @@ def main():
                 signal.signal(
                     signal.SIGTERM,
                     lambda signum, frame: handle_sigterm(
-                        server_socket, client_list, sigterm_received
+                        server_socket, client_list, sigterm_received, heartbeats
                     ),
                 )
                 while True:
