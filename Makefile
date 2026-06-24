@@ -16,6 +16,10 @@ logs:
 	docker compose -f docker-compose.yaml logs
 .PHONY: logs
 
+clear:
+	sudo rm -rf output/* wal/*
+.PHONY: clear
+
 inputs:
 	uv run generate_inputs.py --output=datasets 10000 3
 .PHONY: inputs
