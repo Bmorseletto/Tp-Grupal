@@ -8,6 +8,7 @@ from pathlib import Path
 import time
 from common import message_protocol
 from datetime import datetime
+from asyncio.exceptions import IncompleteReadError
 
 TRANSACTIONS_INPUT_FILE = os.environ["TRANSACTIONS_INPUT_FILE"]
 ACCOUNTS_INPUT_FILE = os.environ["ACCOUNTS_INPUT_FILE"]
@@ -66,7 +67,8 @@ class Client:
             except (socket.error, BrokenPipeError, OSError, ValueError) as e:
                 if self.closed:
                     return
-                raise e
+                else:
+                    raise e
             #message_protocol.external.recv_msg(self.server_socket)
 
     def _send_account_records(self, accounts_file):
@@ -196,7 +198,6 @@ def main() -> int:
         client = Client()
         send_thread = None
         try:
-            
             start = datetime.now()
             client.connect(SERVER_HOST, SERVER_PORT)
 
@@ -215,11 +216,11 @@ def main() -> int:
                 middle = datetime.now()
                 logging.warning(f"Proceso completado con éxito. Time elapsed: {middle - start}")
                 break
-        except (socket.error, BrokenPipeError) as e:
+        except (socket.error, BrokenPipeError, ConnectionResetError, IncompleteReadError) as e:
             if not client.closed:
                 logging.error(f"The connection with the server was lost {e}")
                 client.disconnect()
-                time.sleep(1)
+                time.sleep(2)
             else:
                 break
         except Exception:
