@@ -2,6 +2,7 @@ import os
 import logging
 import signal
 import csv
+import time
 
 from common import middleware, message_protocol, heartbeat
 
@@ -11,6 +12,7 @@ OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 Q2_FILTER_AMOUNT = int(os.environ["Q2_FILTER_AMOUNT"])
 Q2_FILTER_PREFIX = os.environ["Q2_FILTER_PREFIX"]
 PATH_TRANSACTIONS = "/output/q2_transaction_"
+CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
@@ -33,11 +35,33 @@ class JoinFilterQ2:
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
+        self.last_seen = {}
+
+    def _cleanup_expired_clients(self):
+        now = time.time()
+        expired_clients = [
+            client_id
+            for client_id, last_seen in self.last_seen.items()
+            if now - last_seen > CLIENT_STATE_TTL_SECONDS
+        ]
+        for client_id in expired_clients:
+            logging.info(
+                f"Client {client_id} expired after {CLIENT_STATE_TTL_SECONDS} seconds without updates; dropping state"
+            )
+            self.results.pop(client_id, None)
+            self.worker_finished_with_client.pop(client_id, None)
+            self.clients_accounts_eof.discard(client_id)
+            self.last_seen.pop(client_id, None)
+
+    def _update_last_seen(self, client_id):
+        self.last_seen[client_id] = time.time()
 
     def _process_transaction(self, transaction_message):
         client_id = transaction_message["client_id"]
         nodo_id = transaction_message["nodo_id"]
         results = transaction_message["results"]
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
         # with open(PATH_TRANSACTIONS + f"{client_id}.csv", "a") as csvfile:
         #     csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
@@ -60,6 +84,7 @@ class JoinFilterQ2:
         self.results.pop(client_id, None)
         del self.worker_finished_with_client[client_id]
         self.clients_accounts_eof.discard(client_id)
+        self.last_seen.pop(client_id, None)
         logging.info(f"finished processing EOF of {client_id} sent results to join")
 
     def _relate_bank_id_bank_name(self, client_id):
@@ -98,6 +123,8 @@ class JoinFilterQ2:
             deserialized_message = message_protocol.internal.deserialize(message)
             if isinstance(deserialized_message, list):
                 client_id = deserialized_message[0]
+                self._cleanup_expired_clients()
+                self._update_last_seen(client_id)
                 self.clients_accounts_eof.add(client_id)
                 # if client_id in self.worker_finished_with_client and len(self.worker_finished_with_client[client_id]) == Q2_FILTER_AMOUNT:
                 #     self._send_results(client_id)
@@ -121,6 +148,7 @@ class JoinFilterQ2:
         self.input_queue.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.last_seen.clear()
 
     def close(self):
         self.input_queue.close()

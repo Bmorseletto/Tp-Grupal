@@ -18,6 +18,7 @@ WORKING = False
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
+CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 
 
 class DollarAmtFilter:
@@ -29,11 +30,15 @@ class DollarAmtFilter:
             MOM_HOST, OUTPUT_QUEUE
         )
         self.eof_count = {}
+        self.last_seen = {}
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _process_data(self, transaction):
+        client_id = transaction.get("client_id")
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         if transaction["amount_paid"] < 50:
             output = {
                 "client_id": transaction["client_id"],
@@ -48,6 +53,8 @@ class DollarAmtFilter:
 
     def _process_eof(self, deserialized_message):
         client_id = deserialized_message["client_id"]
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         if self.eof_count[client_id] < UPSTREAM_AMOUNT:
             return
@@ -57,6 +64,18 @@ class DollarAmtFilter:
             )
         )
         del self.eof_count[client_id]
+        self.last_seen.pop(client_id, None)
+
+    def _cleanup_expired_clients(self):
+        now = time.time()
+        expired = [c for c, t in self.last_seen.items() if now - t > CLIENT_STATE_TTL_SECONDS]
+        for c in expired:
+            self.eof_count.pop(c, None)
+            self.last_seen.pop(c, None)
+
+    def _update_last_seen(self, client_id):
+        if client_id is not None:
+            self.last_seen[client_id] = time.time()
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
@@ -81,6 +100,7 @@ class DollarAmtFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.last_seen.clear()
 
     def close(self):
         self.input_exchange.close()

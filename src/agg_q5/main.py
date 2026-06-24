@@ -1,6 +1,7 @@
 import os
 import logging
 import signal
+import time
 
 from common import middleware, message_protocol,heartbeat
 
@@ -12,6 +13,7 @@ Q5_FILTER_PREFIX = os.environ["Q5_FILTER_PREFIX"]
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
+CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 
 
 class AggregatorQ5:
@@ -27,9 +29,30 @@ class AggregatorQ5:
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
+        self.last_seen = {}
+
+    def _cleanup_expired_clients(self):
+        now = time.time()
+        expired_clients = [
+            client_id
+            for client_id, last_seen in self.last_seen.items()
+            if now - last_seen > CLIENT_STATE_TTL_SECONDS
+        ]
+        for client_id in expired_clients:
+            logging.info(
+                f"Client {client_id} expired after {CLIENT_STATE_TTL_SECONDS} seconds without updates; dropping state"
+            )
+            self.count.pop(client_id, None)
+            self.worker_finished_with_client.pop(client_id, None)
+            self.last_seen.pop(client_id, None)
+
+    def _update_last_seen(self, client_id):
+        self.last_seen[client_id] = time.time()
 
     def _process_data(self, transaction: dict):
         client_id = transaction.pop("client_id")
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         self.count[client_id] = self.count.get(client_id, 0) + 1
         logging.debug(f"Processed transaction for client {client_id}. Current count: {self.count[client_id]}")
 
@@ -37,6 +60,8 @@ class AggregatorQ5:
         client_id = eof_message["client_id"]
         nodo_id = eof_message["nodo_id"]
         logging.info(f"Processing EOF for client {client_id} and node {nodo_id}")
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
         if len(self.worker_finished_with_client[client_id]) == Q5_FILTER_AMOUNT:
             count = self.count.pop(client_id, 0)
@@ -44,6 +69,7 @@ class AggregatorQ5:
                 message_protocol.internal.serialize([client_id, "q5", [{"count": count}]])
             )
             del self.worker_finished_with_client[client_id]
+            self.last_seen.pop(client_id, None)
             self.output_queue.send(
                 message_protocol.internal.serialize([client_id, "q5"])
             )
@@ -66,6 +92,7 @@ class AggregatorQ5:
         self.input_queue.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.last_seen.clear()
 
     def close(self):
         self.input_queue.close()

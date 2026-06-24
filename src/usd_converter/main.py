@@ -1,6 +1,7 @@
 import os
 import logging
 import signal
+import time
 import requests
 import json
 from datetime import datetime
@@ -15,6 +16,8 @@ UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
+
+CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 
 CONVERSION_API_URL = (
     "https://api.frankfurter.dev/v2/rates?from=2022-09-01&to=2022-09-05&base=USD"
@@ -51,6 +54,7 @@ class USDConverter:
         self.conversion_rates = {}
         self._fetch_conversion_rates()
         self.eof_count = {}
+        self.last_seen = {}
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
@@ -110,6 +114,9 @@ class USDConverter:
         return amount / rate
 
     def _process_data(self, transaction):
+        client_id = transaction.get("client_id")
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         amount = transaction.get("amount_paid")
         currency = transaction.get("payment_currency")
         date = str(datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M").date())
@@ -133,6 +140,8 @@ class USDConverter:
     def _process_eof(self, deserialized_message):
         client_id = deserialized_message["client_id"]
         nodo_id = deserialized_message["nodo_id"]
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         if self.eof_count[client_id] < UPSTREAM_AMOUNT:
             logging.warning(f"still some worker pending {self.eof_count[client_id]}, {UPSTREAM_AMOUNT}, nodo_id: {nodo_id}")
@@ -142,6 +151,18 @@ class USDConverter:
             message_protocol.internal.serialize({"nodo_id":ID, "client_id":client_id})
         )
         del self.eof_count[client_id]
+        self.last_seen.pop(client_id, None)
+
+    def _cleanup_expired_clients(self):
+        now = time.time()
+        expired = [c for c, t in self.last_seen.items() if now - t > CLIENT_STATE_TTL_SECONDS]
+        for c in expired:
+            self.eof_count.pop(c, None)
+            self.last_seen.pop(c, None)
+
+    def _update_last_seen(self, client_id):
+        if client_id is not None:
+            self.last_seen[client_id] = time.time()
 
 
     def process_messsage(self, message, ack, nack):
@@ -164,6 +185,7 @@ class USDConverter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.last_seen.clear()
 
     def close(self):
         self.input_exchange.close()

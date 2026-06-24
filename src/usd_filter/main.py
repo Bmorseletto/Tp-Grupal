@@ -2,6 +2,7 @@ import os
 import logging
 import bisect
 import signal
+import time
 
 from common import middleware, message_protocol, heartbeat
 import zlib
@@ -23,6 +24,8 @@ TOTAL_QUERIES = 3
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
+
+CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 
 
 class CurrencyFilter:
@@ -53,12 +56,16 @@ class CurrencyFilter:
                 ID
             )        
         self.heartbeats = []
+        self.last_seen = {}
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _process_data(
         self, transaction
     ):
+        client_id = transaction.get("client_id")
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         for i in range(TOTAL_QUERIES):
             send_to_query_i = getattr(self, f"_send_to_query_{i+1}")
             send_to_query_i(transaction)
@@ -143,7 +150,10 @@ class CurrencyFilter:
             )
 
     def _process_eof(self, deserialized_message):
+        client_id = deserialized_message[0]
         logging.debug("sending eof to next node")
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         for i, output_exchange in enumerate(self.output_exchanges):
             output_exchange.send_by_key(
                 message_protocol.internal.serialize(
@@ -157,6 +167,17 @@ class CurrencyFilter:
                     {"nodo_id": ID, "client_id": deserialized_message[0]}
                 ),
                 FILTER_DATE_PREFIX,)
+        self.last_seen.pop(client_id, None)
+
+    def _cleanup_expired_clients(self):
+        now = time.time()
+        expired = [c for c, t in self.last_seen.items() if now - t > CLIENT_STATE_TTL_SECONDS]
+        for c in expired:
+            self.last_seen.pop(c, None)
+
+    def _update_last_seen(self, client_id):
+        if client_id is not None:
+            self.last_seen[client_id] = time.time()
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
@@ -178,6 +199,7 @@ class CurrencyFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.last_seen.clear()
 
     def close(self):
         self.input_exchange.close()

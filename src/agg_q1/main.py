@@ -2,6 +2,7 @@ import os
 import logging
 import signal
 import csv
+import time
 
 from common import middleware, message_protocol, heartbeat
 
@@ -10,6 +11,7 @@ INPUT_QUEUE = os.environ["INPUT_QUEUE"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
 Q1_FILTER_AMOUNT = int(os.environ["Q1_FILTER_AMOUNT"])
 Q1_FILTER_PREFIX = os.environ["Q1_FILTER_PREFIX"]
+CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
@@ -29,9 +31,30 @@ class JoinFilterQ1:
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
+        self.last_seen = {}
+
+    def _cleanup_expired_clients(self):
+        now = time.time()
+        expired_clients = [
+            client_id
+            for client_id, last_seen in self.last_seen.items()
+            if now - last_seen > CLIENT_STATE_TTL_SECONDS
+        ]
+        for client_id in expired_clients:
+            logging.info(
+                f"Client {client_id} expired after {CLIENT_STATE_TTL_SECONDS} seconds without updates; dropping state"
+            )
+            self.results.pop(client_id, None)
+            self.worker_finished_with_client.pop(client_id, None)
+            self.last_seen.pop(client_id, None)
+
+    def _update_last_seen(self, client_id):
+        self.last_seen[client_id] = time.time()
 
     def _process_data(self, transaction: dict):
         client_id = transaction.pop("client_id")
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         self.worker_finished_with_client.setdefault(client_id, set())
         self.output_queue.send(
             message_protocol.internal.serialize([client_id, "q1", [{
@@ -91,6 +114,7 @@ class JoinFilterQ1:
         self.input_queue.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.last_seen.clear()
 
     def close(self):
         self.input_queue.close()

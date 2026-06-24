@@ -3,12 +3,13 @@ import os
 import logging
 import bisect
 import signal
+import time
 import zlib
 
 from common import middleware, message_protocol, heartbeat
-from common import middleware, message_protocol
 
 ID = int(os.environ["ID"])
+CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 MOM_HOST = os.environ["MOM_HOST"]
 FILTER_PREFIX = os.environ["FILTER_PREFIX"]
 OUTPUTS_PREFIX = os.environ["OUTPUTS_PREFIX"] # FORMATO: prefix1,prefix2,prefix (usamos split de python para hacer la lista de prefix)
@@ -45,6 +46,7 @@ class DateFilter:
         self.counter = 0
         self.counter2 = 0
         self.eof_count = {}
+        self.last_seen = {}
         self.graph_router = None
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
@@ -54,7 +56,27 @@ class DateFilter:
         logging.debug(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
         logging.info(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
 
+    def _cleanup_expired_clients(self):
+        now = time.time()
+        expired_clients = [
+            client_id
+            for client_id, last_seen in self.last_seen.items()
+            if now - last_seen > CLIENT_STATE_TTL_SECONDS
+        ]
+        for client_id in expired_clients:
+            logging.info(
+                f"Client {client_id} expired after {CLIENT_STATE_TTL_SECONDS} seconds without updates; dropping state"
+            )
+            self.eof_count.pop(client_id, None)
+            self.last_seen.pop(client_id, None)
+
+    def _update_last_seen(self, client_id):
+        self.last_seen[client_id] = time.time()
+
     def _process_data(self, transaction):
+        self._cleanup_expired_clients()
+        client_id = transaction.get("client_id")
+        self._update_last_seen(client_id)
         self.counter2 +=1
         transaction_timestamp=datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M").replace(hour=0, minute=0, second=0, microsecond=0)
         initial_date = datetime.strptime(INITIAL_DATE, "%Y/%m/%d")
@@ -94,6 +116,8 @@ class DateFilter:
            
     def _process_eof(self, deserialized_message):
         client_id = deserialized_message["client_id"]
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         if self.eof_count[client_id] < UPSTREAM_AMOUNT:
             return
@@ -132,6 +156,8 @@ class DateFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.last_seen.clear()
+
     def close(self):
         self.input_exchange.close()
         for exchange in self.output_exchanges:
