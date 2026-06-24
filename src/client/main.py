@@ -8,6 +8,7 @@ from pathlib import Path
 import time
 from common import message_protocol
 from datetime import datetime
+from asyncio.exceptions import IncompleteReadError
 
 TRANSACTIONS_INPUT_FILE = os.environ["TRANSACTIONS_INPUT_FILE"]
 ACCOUNTS_INPUT_FILE = os.environ["ACCOUNTS_INPUT_FILE"]
@@ -55,11 +56,19 @@ class Client:
 
     def _send_and_wait_ack(self, msg_type, *args):
         with self._socket_lock:
+            if self.closed:
+                return
             if self._send_error:
                 raise self._send_error
-            message_protocol.external.send_msg(
-                self.server_socket, msg_type, *args
-            )
+            try:
+                message_protocol.external.send_msg(
+                    self.server_socket, msg_type, *args
+                )
+            except (socket.error, BrokenPipeError, OSError, ValueError) as e:
+                if self.closed:
+                    return
+                else:
+                    raise e
             #message_protocol.external.recv_msg(self.server_socket)
 
     def _send_account_records(self, accounts_file):
@@ -68,6 +77,8 @@ class Client:
                 csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
                 _headers = next(csv_reader)
                 for row in csv_reader:
+                    if self.closed:
+                        break
                     (
                         bank_name,
                         bank_id,
@@ -96,7 +107,10 @@ class Client:
         with open(transactions_file, newline="\n") as csvfile:
             csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
             _headers = next(csv_reader)
+            
             for row in csv_reader:
+                if self.closed:
+                    break
                 (
                     timestamp,
                     og_bank,
@@ -184,7 +198,6 @@ def main() -> int:
         client = Client()
         send_thread = None
         try:
-            
             start = datetime.now()
             client.connect(SERVER_HOST, SERVER_PORT)
 
@@ -203,11 +216,13 @@ def main() -> int:
                 middle = datetime.now()
                 logging.warning(f"Proceso completado con éxito. Time elapsed: {middle - start}")
                 break
-        except (socket.error, BrokenPipeError) as e:
+        except (socket.error, BrokenPipeError, ConnectionResetError, IncompleteReadError) as e:
             if not client.closed:
                 logging.error(f"The connection with the server was lost {e}")
                 client.disconnect()
-                time.sleep(1)
+                time.sleep(2)
+            else:
+                break
         except Exception:
             logging.exception("An error occurred while running the client")
             client.disconnect()

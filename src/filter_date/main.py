@@ -50,10 +50,6 @@ class DateFilter:
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
-        logging.debug(f"OUTPUTS EXCHANGE AMOUNT: {len(self.output_exchanges)}")
-        logging.debug(f"OUTPUTS EXCHANGE ROUTING KEYS: {self.output_exchanges[0]._routing_keys}")
-        logging.debug(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
-        logging.info(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
 
     def _process_data(self, transaction):
         self.counter2 +=1
@@ -119,7 +115,6 @@ class DateFilter:
             ack()
         except:
             logging.info(f"MESSAGE {deserialized_message} error")
-            nack()
         
 
     def start(self):

@@ -51,13 +51,13 @@ def filter_worker_containers(containers: List[str], excluded_patterns: List[str]
 def kill_container(container_name: str) -> bool:
     try:
         # Stop the container
-        # result = subprocess.run(
-        #     ['docker', 'stop', container_name],
-        #     capture_output=True,
-        #     text=True,
-        #     check=True
-        # )
-        # print(f"Container {container_name} stopped | result {result.returncode}")
+        #result = subprocess.run(
+        #    ['docker', 'stop', container_name],
+        #    capture_output=True,
+        #    text=True,
+        #    check=True
+        #)
+        
         
         # Kill the container
         result = subprocess.run(
@@ -66,7 +66,7 @@ def kill_container(container_name: str) -> bool:
             text=True,
             check=False
         )
-        
+        print(f"Container {container_name} stopped | result {result.returncode}")
         return True
     except subprocess.CalledProcessError as e:
         print(f"Error stopping container {container_name}: {e.stderr}")

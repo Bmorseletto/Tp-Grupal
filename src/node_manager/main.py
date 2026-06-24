@@ -117,6 +117,10 @@ def _handle_node(node_socket, node_uuid, node_dict, lock, status_gate, is_leader
             try:
                 test = False
                 message = message_protocol.external.recv_msg(node_socket)
+                if message[1] == "":
+                    logging.info(f"{node_id} is closing gracefully")
+                    node_id = ""
+                    break
                 if node_id == "":
                     test = True
                 node_id = message[1]
@@ -150,15 +154,8 @@ def _handle_node(node_socket, node_uuid, node_dict, lock, status_gate, is_leader
     if node_id != ""  and sigterm_received.value == 0:
         status_gate.wait()
         if is_leader.value:
-            subprocess.run(
-                ['docker', 'wait', node_id],
-                check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
             if sigterm_received.value == 1:
                 return
-            time.sleep(2)
             logging.info(f"restarting container {node_id}")
             resultado = subprocess.run(
                 ['docker', 'start', node_id], 
