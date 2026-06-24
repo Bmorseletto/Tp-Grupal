@@ -6,6 +6,7 @@ import zlib
 from collections import defaultdict
 
 from common import middleware, message_protocol, heartbeat
+from common.client_state_ttl import ClientStateTTL
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -18,7 +19,6 @@ MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
 SCATTER_VALUE = int(os.environ["SCATTER_VALUE"])
-CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 
 
 class GraphFilter:
@@ -47,7 +47,7 @@ class GraphFilter:
         #   }
         # }
         self.destination_groups = {}
-        self.last_seen = {}
+        self.client_state_ttl = ClientStateTTL()
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
@@ -63,8 +63,8 @@ class GraphFilter:
 
     def _process_data(self, transaction):
         client_id = transaction.get("client_id")
-        self._cleanup_expired_clients()
-        self._update_last_seen(client_id)
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+        self.client_state_ttl.update_last_seen(client_id)
         if client_id is None:
             return
 
@@ -104,8 +104,8 @@ class GraphFilter:
         if client_id is None:
             return
 
-        self._cleanup_expired_clients()
-        self._update_last_seen(client_id)
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+        self.client_state_ttl.update_last_seen(client_id)
 
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         if self.eof_count[client_id] < FILTER_DATE_AMOUNT:
@@ -139,20 +139,18 @@ class GraphFilter:
         self.origin_groups.pop(client_id, None)
         self.eof_count.pop(client_id, None)
         self.destination_groups.pop(client_id, None)
-        self.last_seen.pop(client_id, None)
+        self.client_state_ttl.remove(client_id)
+
+    def _expire_client_state(self, client_id):
+        self.eof_count.pop(client_id, None)
+        self.origin_groups.pop(client_id, None)
+        self.destination_groups.pop(client_id, None)
 
     def _cleanup_expired_clients(self):
-        now = time.time()
-        expired = [c for c, t in self.last_seen.items() if now - t > CLIENT_STATE_TTL_SECONDS]
-        for c in expired:
-            self.eof_count.pop(c, None)
-            self.origin_groups.pop(c, None)
-            self.destination_groups.pop(c, None)
-            self.last_seen.pop(c, None)
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
 
     def _update_last_seen(self, client_id):
-        if client_id is not None:
-            self.last_seen[client_id] = time.time()
+        self.client_state_ttl.update_last_seen(client_id)
 
     def _format_node(self, node_key):
         bank, account = node_key
@@ -192,7 +190,7 @@ class GraphFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-        self.last_seen.clear()
+        self.client_state_ttl.clear()
 
     def close(self):
         self.input_exchange.close()

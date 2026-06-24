@@ -5,6 +5,7 @@ import signal
 import time
 
 from common import middleware, message_protocol, heartbeat
+from common.client_state_ttl import ClientStateTTL
 import zlib
 
 ID = int(os.environ["ID"])
@@ -24,8 +25,6 @@ TOTAL_QUERIES = 3
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
-
-CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 
 
 class CurrencyFilter:
@@ -56,7 +55,7 @@ class CurrencyFilter:
                 ID
             )        
         self.heartbeats = []
-        self.last_seen = {}
+        self.client_state_ttl = ClientStateTTL()
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
@@ -167,17 +166,16 @@ class CurrencyFilter:
                     {"nodo_id": ID, "client_id": deserialized_message[0]}
                 ),
                 FILTER_DATE_PREFIX,)
-        self.last_seen.pop(client_id, None)
+        self.client_state_ttl.remove(client_id)
+
+    def _expire_client_state(self, client_id):
+        pass
 
     def _cleanup_expired_clients(self):
-        now = time.time()
-        expired = [c for c, t in self.last_seen.items() if now - t > CLIENT_STATE_TTL_SECONDS]
-        for c in expired:
-            self.last_seen.pop(c, None)
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
 
     def _update_last_seen(self, client_id):
-        if client_id is not None:
-            self.last_seen[client_id] = time.time()
+        self.client_state_ttl.update_last_seen(client_id)
 
     def process_messsage(self, message, ack, nack):
         deserialized_message = message_protocol.internal.deserialize(message)
@@ -199,7 +197,7 @@ class CurrencyFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-        self.last_seen.clear()
+        self.client_state_ttl.clear()
 
     def close(self):
         self.input_exchange.close()

@@ -6,6 +6,7 @@ import time
 
 
 from common import middleware, message_protocol, heartbeat
+from common.client_state_ttl import ClientStateTTL
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
@@ -18,8 +19,6 @@ TRANSACTION_STORAGE = "/output/q3_transaction_"
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
-CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
-
 class JoinFilterQ3:
 
     def __init__(self):
@@ -34,25 +33,20 @@ class JoinFilterQ3:
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
-        self.last_seen = {}
+        self.client_state_ttl = ClientStateTTL()
+
+    def _expire_client_state(self, client_id):
+        logging.info(
+            f"Client {client_id} expired after {self.client_state_ttl.ttl_seconds} seconds without updates; dropping state"
+        )
+        self.results.pop(client_id, None)
+        self.worker_finished_with_client.pop(client_id, None)
 
     def _cleanup_expired_clients(self):
-        now = time.time()
-        expired_clients = [
-            client_id
-            for client_id, last_seen in self.last_seen.items()
-            if now - last_seen > CLIENT_STATE_TTL_SECONDS
-        ]
-        for client_id in expired_clients:
-            logging.info(
-                f"Client {client_id} expired after {CLIENT_STATE_TTL_SECONDS} seconds without updates; dropping state"
-            )
-            self.results.pop(client_id, None)
-            self.worker_finished_with_client.pop(client_id, None)
-            self.last_seen.pop(client_id, None)
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
 
     def _update_last_seen(self, client_id):
-        self.last_seen[client_id] = time.time()
+        self.client_state_ttl.update_last_seen(client_id)
 
     def _process_data(self, transaction):
         try:
@@ -89,7 +83,7 @@ class JoinFilterQ3:
                 results = sorted(self.results.pop(client_id, []), key=lambda x: x['payment_format'])
                 self.output_queue.send(message_protocol.internal.serialize([client_id, "q3"]))
                 del self.worker_finished_with_client[client_id]
-                self.last_seen.pop(client_id, None)
+                self.client_state_ttl.remove(client_id)
                 avg_path = AVG_STORAGE + f"{client_id}.csv"
                 if os.path.isfile(avg_path):
                     os.remove(avg_path)
@@ -114,7 +108,7 @@ class JoinFilterQ3:
         self.input_queue.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-        self.last_seen.clear()
+        self.client_state_ttl.clear()
 
     def close(self):
         self.input_queue.close()

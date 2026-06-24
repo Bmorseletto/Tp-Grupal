@@ -4,6 +4,7 @@ import signal
 import time
 
 from common import middleware, message_protocol, heartbeat
+from common.client_state_ttl import ClientStateTTL
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -16,7 +17,6 @@ NODO_ID = "nodo_id"
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
-CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 
 class AvgFilter:
 
@@ -31,15 +31,15 @@ class AvgFilter:
         self.date_filter_finished_with_client = {}
         self.payment_formats_averages = {}
         self.transactions_per_client = {}
-        self.last_seen = {}
+        self.client_state_ttl = ClientStateTTL()
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
 
     def _process_data(self, data):
         client_id = data.pop("client_id")
-        self._cleanup_expired_clients()
-        self._update_last_seen(client_id)
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+        self.client_state_ttl.update_last_seen(client_id)
         payment_format = data.get("payment_format", "")
         if client_id not in self.transactions_per_client:
             self.transactions_per_client[client_id] = {}
@@ -56,8 +56,8 @@ class AvgFilter:
     def _process_eof(self, deserialized_message):
         try:
             client_id = deserialized_message["client_id"]
-            self._cleanup_expired_clients()
-            self._update_last_seen(client_id)
+            self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+            self.client_state_ttl.update_last_seen(client_id)
             nodo_id = deserialized_message["nodo_id"]
             if client_id not in self.avg_worker_finished_with_client:
                 self.avg_worker_finished_with_client[client_id] = set()
@@ -84,7 +84,7 @@ class AvgFilter:
             self.payment_formats_averages.pop(client_id, None)
             self.avg_worker_finished_with_client.pop(client_id, None)
             self.date_filter_finished_with_client.pop(client_id, None)
-            self.last_seen.pop(client_id, None)
+            self.client_state_ttl.remove(client_id)
         except Exception as e:
             logging.warning(f"ERROR: {e}")
 
@@ -106,25 +106,23 @@ class AvgFilter:
         self.input_exchange.close()
         self.output_queue.close()
 
+    def _expire_client_state(self, client_id):
+        self.avg_worker_finished_with_client.pop(client_id, None)
+        self.date_filter_finished_with_client.pop(client_id, None)
+        self.payment_formats_averages.pop(client_id, None)
+        self.transactions_per_client.pop(client_id, None)
+
     def _cleanup_expired_clients(self):
-        now = time.time()
-        expired = [c for c, t in self.last_seen.items() if now - t > CLIENT_STATE_TTL_SECONDS]
-        for c in expired:
-            self.avg_worker_finished_with_client.pop(c, None)
-            self.date_filter_finished_with_client.pop(c, None)
-            self.payment_formats_averages.pop(c, None)
-            self.transactions_per_client.pop(c, None)
-            self.last_seen.pop(c, None)
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
 
     def _update_last_seen(self, client_id):
-        if client_id is not None:
-            self.last_seen[client_id] = time.time()
+        self.client_state_ttl.update_last_seen(client_id)
 
     def stop(self):
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-        self.last_seen.clear()
+        self.client_state_ttl.clear()
 
     def close(self):
         self.input_exchange.close()

@@ -7,13 +7,13 @@ import time
 import zlib
 
 from common import middleware, message_protocol, heartbeat
+from common.client_state_ttl import ClientStateTTL
 
 ID = int(os.environ["ID"])
-CLIENT_STATE_TTL_SECONDS = int(os.environ.get("CLIENT_STATE_TTL_SECONDS", "300"))
 MOM_HOST = os.environ["MOM_HOST"]
 FILTER_PREFIX = os.environ["FILTER_PREFIX"]
 OUTPUTS_PREFIX = os.environ["OUTPUTS_PREFIX"] # FORMATO: prefix1,prefix2,prefix (usamos split de python para hacer la lista de prefix)
-OUTPUTS_AMOUNTS = os.environ["OUTPUTS_AMOUNTS"]  # FORMATO: 1,2,3 (usamos split de python para hacer la lista de amounts)
+OUTPUTS_AMOUNTS = os.environ["OUTPUTS_AMOUNTS"]  # FORMATO: 1,2,3 (usamos split de python para hacer la lista of amounts)
 ROUTING_HASH_TARGET = os.environ["ROUTING_HASH_TARGET"] # columna del csv de input data que se usa para routear el input EJ: from_bank,to_account,
 INITIAL_DATE = os.environ["INITIAL_DATE"]
 UPSTREAM_AMOUNT = int(os.environ["UPSTREAM_AMOUNT"])
@@ -46,7 +46,7 @@ class DateFilter:
         self.counter = 0
         self.counter2 = 0
         self.eof_count = {}
-        self.last_seen = {}
+        self.client_state_ttl = ClientStateTTL()
         self.graph_router = None
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
@@ -57,21 +57,16 @@ class DateFilter:
         logging.info(f"ROUTING_HASH_TARGET: {ROUTING_HASH_TARGET}")
 
     def _cleanup_expired_clients(self):
-        now = time.time()
-        expired_clients = [
-            client_id
-            for client_id, last_seen in self.last_seen.items()
-            if now - last_seen > CLIENT_STATE_TTL_SECONDS
-        ]
-        for client_id in expired_clients:
-            logging.info(
-                f"Client {client_id} expired after {CLIENT_STATE_TTL_SECONDS} seconds without updates; dropping state"
-            )
-            self.eof_count.pop(client_id, None)
-            self.last_seen.pop(client_id, None)
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
 
     def _update_last_seen(self, client_id):
-        self.last_seen[client_id] = time.time()
+        self.client_state_ttl.update_last_seen(client_id)
+
+    def _expire_client_state(self, client_id):
+        logging.info(
+            f"Client {client_id} expired after {self.client_state_ttl.ttl_seconds} seconds without updates; dropping state"
+        )
+        self.eof_count.pop(client_id, None)
 
     def _process_data(self, transaction):
         self._cleanup_expired_clients()
@@ -156,7 +151,7 @@ class DateFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-        self.last_seen.clear()
+        self.client_state_ttl.clear()
 
     def close(self):
         self.input_exchange.close()
