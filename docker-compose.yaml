@@ -125,6 +125,8 @@ services:
       - NODE_NAME=currency_filter_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+    volumes:
+      - ./wal:/wal
   currency_filter_1:
     build:
       context: ./src/
@@ -161,6 +163,8 @@ services:
       - NODE_NAME=currency_filter_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+    volumes:
+      - ./wal:/wal
   currency_filter_2:
     build:
       context: ./src/
@@ -197,6 +201,8 @@ services:
       - NODE_NAME=currency_filter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+    volumes:
+      - ./wal:/wal
   dollar_amount_filter_0:
     build:
       context: ./src/
@@ -215,6 +221,8 @@ services:
       - NODE_NAME=dollar_amount_filter_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+    volumes:
+      - ./wal:/wal
   dollar_amount_filter_1:
     build:
       context: ./src/
@@ -233,6 +241,8 @@ services:
       - NODE_NAME=dollar_amount_filter_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+    volumes:
+      - ./wal:/wal
   dollar_amount_filter_2:
     build:
       context: ./src/
@@ -251,6 +261,8 @@ services:
       - NODE_NAME=dollar_amount_filter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+    volumes:
+      - ./wal:/wal
   query_1_aggregator:
     build:
       context: ./src/
@@ -271,6 +283,7 @@ services:
       - MANAGER_PORT=5679
     volumes:
       - ./output:/output
+      - ./wal:/wal
   query_2_aggregator:
     build:
       context: ./src/
@@ -289,8 +302,10 @@ services:
       - NODE_NAME=query_2_aggregator
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   max_transaction_filter_0:
     build:
       context: ./src/
@@ -309,6 +324,9 @@ services:
       - NODE_NAME=max_transaction_filter_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
+    volumes:
+      - ./wal:/wal
   max_transaction_filter_1:
     build:
       context: ./src/
@@ -327,6 +345,9 @@ services:
       - NODE_NAME=max_transaction_filter_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
+    volumes:
+      - ./wal:/wal
   max_transaction_filter_2:
     build:
       context: ./src/
@@ -345,9 +366,9 @@ services:
       - NODE_NAME=max_transaction_filter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-    ###############################
-  #           QUERY 3           #
-  ###############################
+      - WAL_DIR=/wal
+    volumes:
+      - ./wal:/wal
   query_3_aggregator:
     build:
       context: ./src/
@@ -366,8 +387,10 @@ services:
       - NODE_NAME=query_3_aggregator
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   query_3_avg_filter_0:
     build:
       context: ./src/
@@ -378,18 +401,19 @@ services:
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
-      - FILTER_AMOUNT=3      
+      - FILTER_AMOUNT=3
       - FILTER_PREFIX=AvgFilter
       - OUTPUT_QUEUE=Query3_Aggregator
-      - AVG_CALC_AMOUNT=3     
-      - DATE_FILTER_AMOUNT=3  
+      - AVG_CALC_AMOUNT=3
+      - DATE_FILTER_AMOUNT=3
       - PYTHONUNBUFFERED=1
       - NODE_NAME=query_3_avg_filter_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
-
+      - ./wal:/wal
   query_3_avg_filter_1:
     build:
       context: ./src/
@@ -398,7 +422,7 @@ services:
     depends_on:
       - query_3_aggregator
     environment:
-      - ID=1                    
+      - ID=1
       - MOM_HOST=rabbitmq
       - FILTER_AMOUNT=3
       - FILTER_PREFIX=AvgFilter
@@ -409,8 +433,10 @@ services:
       - NODE_NAME=query_3_avg_filter_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   query_3_avg_filter_2:
     build:
       context: ./src/
@@ -419,7 +445,7 @@ services:
     depends_on:
       - query_3_aggregator
     environment:
-      - ID=2                 
+      - ID=2
       - MOM_HOST=rabbitmq
       - FILTER_AMOUNT=3
       - FILTER_PREFIX=AvgFilter
@@ -430,12 +456,10 @@ services:
       - NODE_NAME=query_3_avg_filter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
-
-  # ==========================================
-  # QUERY 3 AVG CALC
-  # ==========================================
+      - ./wal:/wal
   query_3_avg_calc_0:
     build:
       context: ./src/
@@ -444,22 +468,23 @@ services:
     depends_on:
       - query_3_avg_filter_0
       - query_3_avg_filter_1
-      - query_3_avg_filter_2  # Depende de ambos filtros aguas abajo
+      - query_3_avg_filter_2
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
-      - FILTER_AMOUNT=3        # Cooperando con ID 1
+      - FILTER_AMOUNT=3
       - FILTER_PREFIX=AvgCalc
       - OUTPUT_PREFIX=AvgFilter
-      - OUTPUT_AMOUNT=3        # Envía a 2 AvgFilters
+      - OUTPUT_AMOUNT=3
       - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
       - NODE_NAME=query_3_avg_calc_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
-
+      - ./wal:/wal
   query_3_avg_calc_1:
     build:
       context: ./src/
@@ -470,7 +495,7 @@ services:
       - query_3_avg_filter_1
       - query_3_avg_filter_2
     environment:
-      - ID=1                    # Nuevo ID
+      - ID=1
       - MOM_HOST=rabbitmq
       - FILTER_AMOUNT=3
       - FILTER_PREFIX=AvgCalc
@@ -481,9 +506,10 @@ services:
       - NODE_NAME=query_3_avg_calc_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
-  
+      - ./wal:/wal
   query_3_avg_calc_2:
     build:
       context: ./src/
@@ -494,7 +520,7 @@ services:
       - query_3_avg_filter_1
       - query_3_avg_filter_2
     environment:
-      - ID=2                    # Nuevo ID
+      - ID=2
       - MOM_HOST=rabbitmq
       - FILTER_AMOUNT=3
       - FILTER_PREFIX=AvgCalc
@@ -505,27 +531,25 @@ services:
       - NODE_NAME=query_3_avg_calc_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
-
-  # ==========================================
-  # QUERY 3 DATE FILTER
-  # ==========================================
+      - ./wal:/wal
   query_3_date_filter_0:
     build:
       context: ./src/
       dockerfile: filter_date/Dockerfile
     container_name: query_3_date_filter_0
     depends_on:
-      - query_3_avg_filter_0
-      - query_3_avg_filter_1
-      - query_3_avg_filter_2
+    - query_3_avg_filter_0
+    - query_3_avg_filter_1
+    - query_3_avg_filter_2
     environment:
       - ID=0
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilterQ3
       - OUTPUTS_PREFIX=AvgFilter
-      - OUTPUTS_AMOUNTS=3 
+      - OUTPUTS_AMOUNTS=3
       - UPSTREAM_AMOUNT=3
       - ROUTING_HASH_TARGET=account
       - INITIAL_DATE=2022/09/06
@@ -534,7 +558,9 @@ services:
       - NODE_NAME=query_3_date_filter_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-
+      - WAL_DIR=/wal
+    volumes:
+      - ./wal:/wal
   query_3_date_filter_1:
     build:
       context: ./src/
@@ -545,7 +571,7 @@ services:
       - query_3_avg_filter_1
       - query_3_avg_filter_2
     environment:
-      - ID=1                    
+      - ID=1
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilterQ3
       - OUTPUTS_PREFIX=AvgFilter
@@ -558,6 +584,9 @@ services:
       - NODE_NAME=query_3_date_filter_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
+    volumes:
+      - ./wal:/wal
   query_3_date_filter_2:
     build:
       context: ./src/
@@ -568,7 +597,7 @@ services:
       - query_3_avg_filter_1
       - query_3_avg_filter_2
     environment:
-      - ID=2               # Nuevo ID
+      - ID=2
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilterQ3
       - OUTPUTS_PREFIX=AvgFilter
@@ -581,11 +610,9 @@ services:
       - NODE_NAME=query_3_date_filter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-
-
-  # ==========================================
-  # DATE FILTER (GENERAL)
-  # ==========================================
+      - WAL_DIR=/wal
+    volumes:
+      - ./wal:/wal
   date_filter_0:
     build:
       context: ./src/
@@ -603,7 +630,7 @@ services:
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
       - OUTPUTS_PREFIX=AvgCalc,Q4Graph
-      - OUTPUTS_AMOUNTS=3,3   
+      - OUTPUTS_AMOUNTS=3,3
       - UPSTREAM_AMOUNT=3
       - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
       - INITIAL_DATE=2022/09/01
@@ -612,7 +639,9 @@ services:
       - NODE_NAME=date_filter_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-
+      - WAL_DIR=/wal
+    volumes:
+      - ./wal:/wal
   date_filter_1:
     build:
       context: ./src/
@@ -626,11 +655,11 @@ services:
       - query_4_graph_1
       - query_4_graph_2
     environment:
-      - ID=1                    # Nuevo ID
+      - ID=1
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
       - OUTPUTS_PREFIX=AvgCalc,Q4Graph
-      - OUTPUTS_AMOUNTS=3,3   
+      - OUTPUTS_AMOUNTS=3,3
       - UPSTREAM_AMOUNT=3
       - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
       - INITIAL_DATE=2022/09/01
@@ -639,6 +668,9 @@ services:
       - NODE_NAME=date_filter_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
+    volumes:
+      - ./wal:/wal
   date_filter_2:
     build:
       context: ./src/
@@ -653,12 +685,13 @@ services:
       - query_4_graph_2
     volumes:
       - ./output:/output
+      - ./wal:/wal
     environment:
-      - ID=2                   # Nuevo ID
+      - ID=2
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilter
       - OUTPUTS_PREFIX=AvgCalc,Q4Graph
-      - OUTPUTS_AMOUNTS=3,3   
+      - OUTPUTS_AMOUNTS=3,3
       - UPSTREAM_AMOUNT=3
       - ROUTING_HASH_TARGET=payment_format,to_bank+to_account+from_bank+from_account
       - INITIAL_DATE=2022/09/01
@@ -667,8 +700,7 @@ services:
       - NODE_NAME=date_filter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-  ##############################################
-  ############## Query 4 #######################
+      - WAL_DIR=/wal
   query_4_graph_0:
     build:
       context: ./src/
@@ -691,9 +723,10 @@ services:
       - NODE_NAME=query_4_graph_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
-
+      - ./wal:/wal
   query_4_graph_1:
     build:
       context: ./src/
@@ -716,8 +749,10 @@ services:
       - NODE_NAME=query_4_graph_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   query_4_graph_2:
     build:
       context: ./src/
@@ -740,8 +775,10 @@ services:
       - NODE_NAME=query_4_graph_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   query_4_scatter_detector_0:
     build:
       context: ./src/
@@ -761,8 +798,10 @@ services:
       - NODE_NAME=query_4_scatter_detector_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   query_4_scatter_detector_1:
     build:
       context: ./src/
@@ -782,8 +821,10 @@ services:
       - NODE_NAME=query_4_scatter_detector_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   query_4_scatter_detector_2:
     build:
       context: ./src/
@@ -803,8 +844,10 @@ services:
       - NODE_NAME=query_4_scatter_detector_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   query_4_agg:
     build:
       context: ./src/
@@ -823,9 +866,10 @@ services:
       - NODE_NAME=query_4_agg
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
-  ##############################################
+      - ./wal:/wal
   usd_converter_0:
     build:
       context: ./src/
@@ -844,8 +888,10 @@ services:
       - NODE_NAME=usd_converter_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   usd_converter_1:
     build:
       context: ./src/
@@ -859,13 +905,15 @@ services:
       - OUTPUT_QUEUE=Query5_Aggregator
       - FILTER_PREFIX=USDConverter
       - FILTER_AMOUNT=3
-      - UPSTREAM_AMOUNT=3 
+      - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
       - NODE_NAME=usd_converter_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   usd_converter_2:
     build:
       context: ./src/
@@ -879,13 +927,15 @@ services:
       - OUTPUT_QUEUE=Query5_Aggregator
       - FILTER_PREFIX=USDConverter
       - FILTER_AMOUNT=3
-      - UPSTREAM_AMOUNT=3 
+      - UPSTREAM_AMOUNT=3
       - PYTHONUNBUFFERED=1
       - NODE_NAME=usd_converter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   query_5_aggregator:
     build:
       context: ./src/
@@ -904,8 +954,10 @@ services:
       - NODE_NAME=query_5_aggregator
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
     volumes:
       - ./output:/output
+      - ./wal:/wal
   query_5_date_filter_0:
     build:
       context: ./src/
@@ -918,7 +970,7 @@ services:
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilterQ5
       - OUTPUTS_PREFIX=USDConverter
-      - OUTPUTS_AMOUNTS=3      
+      - OUTPUTS_AMOUNTS=3
       - UPSTREAM_AMOUNT=1
       - ROUTING_HASH_TARGET=account
       - INITIAL_DATE=2022/09/01
@@ -927,6 +979,9 @@ services:
       - NODE_NAME=query_5_date_filter_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
+    volumes:
+      - ./wal:/wal
   query_5_date_filter_1:
     build:
       context: ./src/
@@ -948,6 +1003,9 @@ services:
       - NODE_NAME=query_5_date_filter_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
+    volumes:
+    - ./wal:/wal
   query_5_date_filter_2:
     build:
       context: ./src/
@@ -960,7 +1018,7 @@ services:
       - MOM_HOST=rabbitmq
       - FILTER_PREFIX=DateFilterQ5
       - OUTPUTS_PREFIX=USDConverter
-      - OUTPUTS_AMOUNTS=3      
+      - OUTPUTS_AMOUNTS=3
       - UPSTREAM_AMOUNT=1
       - ROUTING_HASH_TARGET=account
       - INITIAL_DATE=2022/09/01
@@ -969,6 +1027,9 @@ services:
       - NODE_NAME=query_5_date_filter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
+      - WAL_DIR=/wal
+    volumes:
+      - ./wal:/wal
   rabbitmq:
     build:
       context: ./src/rabbitmq
