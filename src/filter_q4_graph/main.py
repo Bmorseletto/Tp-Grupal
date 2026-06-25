@@ -56,16 +56,20 @@ class GraphFilter:
         state.setdefault("origin", {})
         state.setdefault("destination", {})
         state.setdefault("__msg_counters", {})
-        self.eof_count = state["eof"]
-        self.origin_groups = state["origin"]
-        self.destination_groups = state["destination"]
+        self.eof_count = {str(k): v for k, v in state["eof"].items()}
+        state["eof"] = self.eof_count
+        self.origin_groups = {str(k): v for k, v in state["origin"].items()}
+        state["origin"] = self.origin_groups
+        self.destination_groups = {str(k): v for k, v in state["destination"].items()}
+        state["destination"] = self.destination_groups
         middleware._init_msg_id_counters(state["__msg_counters"])
         self._orphans = self.wal.recover(self._wal_apply, state)
+        for cid in list(self.eof_count):
+            self._try_send(cid)
 
     @staticmethod
     def _wal_apply(entry, state):
-        """Reaplica las mutaciones del log al estado en memoria durante la recuperación."""
-        client_id = entry.get("client_id")
+        client_id = str(entry.get("client_id"))
         
         if entry["type"] == "data":
             transaction = entry["transaction"]
@@ -93,14 +97,36 @@ class GraphFilter:
         elif entry["type"] == "eof_count":
             state["eof"][client_id] = entry["count"]
 
-        elif entry["type"] == "eof_done":
-            state["eof"].pop(client_id, None)
-            state["origin"].pop(client_id, None)
-            state["destination"].pop(client_id, None)
+    def _try_send(self, client_id):
+        if self.eof_count.get(client_id, 0) < FILTER_DATE_AMOUNT:
+            return
+        if client_id in self.origin_groups:
+            for origin_key, data2 in self.origin_groups[client_id].items():
+                if len(data2["destinations"].keys()) >= SCATTER_VALUE:
+                    self.output_exchange.send_by_key(
+                        message_protocol.internal.serialize(
+                            {"client_id": int(client_id), "origin_account": origin_key, "transactions": data2["destinations"]}
+                        ),
+                        OUTPUT_PREFIX,
+                    )
+            for destination_key, data2 in self.destination_groups[client_id].items():
+                routing_key = self._get_output_routing_key(destination_key.split(",")[0], destination_key.split(",")[1])
+                self.output_exchange.send_by_key(
+                    message_protocol.internal.serialize(
+                        {"client_id": int(client_id), "destination_account": destination_key, "transactions": data2["transactions"]}
+                    ),
+                    routing_key,
+                )
+        self.output_exchange.send_by_key(
+            message_protocol.internal.serialize(
+                {"nodo_id": ID, "client_id": int(client_id)}
+            ),
+            OUTPUT_PREFIX,
+        )
 
     def _process_data(self, transaction, msg_id):
-        client_id = transaction.get("client_id")
-        if client_id is None:
+        client_id = str(transaction.get("client_id"))
+        if client_id == "None":
             return
 
         origin_account = transaction.get("account")
@@ -140,47 +166,20 @@ class GraphFilter:
                     "account": origin_account, "from_bank": origin_bank, 
                     "to_account": destination_account, "to_bank": destination_bank
                 }
-            
 
     def _process_eof(self, deserialized_message, msg_id):
-        client_id = deserialized_message.get("client_id")
-        if client_id is None:
+        client_id = str(deserialized_message.get("client_id"))
+        if client_id == "None":
             return
 
-        self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
+        current_count = self.eof_count.get(client_id, 0)
+        if current_count >= FILTER_DATE_AMOUNT:
+            return
+        self.eof_count[client_id] = current_count + 1
         self.wal.append(msg_id, {"type": "eof_count", "client_id": client_id, "count": self.eof_count[client_id]})
         if self.eof_count[client_id] < FILTER_DATE_AMOUNT:
             return
-        if client_id in self.origin_groups.keys():
-            for  origin_key, data2 in self.origin_groups[client_id].items():
-                if len(data2["destinations"].keys()) >= SCATTER_VALUE:
-                    # Se hace un broadcast de todas las cuentas sospechosas (las que le enviaron
-                    # dinero a >=5 cuentas distintas)
-                    self.output_exchange.send_by_key(
-                        message_protocol.internal.serialize(
-                            {"client_id": client_id, "origin_account": origin_key, "transactions": data2["destinations"]}
-                        ),
-                        OUTPUT_PREFIX,
-                    )
-            for destination_key, data2 in self.destination_groups[client_id].items():
-                # Se rutea en base al destino (to_bank y to_account)
-                routing_key=self._get_output_routing_key(destination_key[0], destination_key[1])
-                self.output_exchange.send_by_key(
-                    message_protocol.internal.serialize(
-                        {"client_id": client_id, "destination_account": destination_key, "transactions": data2["transactions"]}
-                    ),
-                    routing_key,
-                )
-        self.output_exchange.send_by_key(
-            message_protocol.internal.serialize(
-                {"nodo_id": ID, "client_id": client_id}
-            ),
-            OUTPUT_PREFIX,
-        )
-        self.origin_groups.pop(client_id, None)
-        self.destination_groups.pop(client_id, None)
-        self.eof_count.pop(client_id, None)
-        self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})
+        self._try_send(client_id)
 
     def _format_node(self, node_key):
         bank, account = node_key

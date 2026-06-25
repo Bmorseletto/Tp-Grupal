@@ -55,18 +55,25 @@ class ScatterGatherDetector:
         state.setdefault("eof", {})
         state.setdefault("__msg_counters", {})
 
-        self.suspicious_accounts = state["suspicious_accounts"]
-        self.accounts = state["accounts"]
-        self.eof_count = state["eof"]
+        self.suspicious_accounts = {str(k): v for k, v in state["suspicious_accounts"].items()}
+        state["suspicious_accounts"] = self.suspicious_accounts
+        self.accounts = {str(k): v for k, v in state["accounts"].items()}
+        state["accounts"] = self.accounts
+        self.eof_count = {str(k): v for k, v in state["eof"].items()}
+        state["eof"] = self.eof_count
         
         middleware._init_msg_id_counters(state["__msg_counters"])
 
         self._orphans = self.wal.recover(self._wal_apply, state)
+        for orphan in self._orphans:
+            if orphan.startswith("results_"):
+                self.wal.tx_commit(orphan)
+        for cid in list(self.eof_count):
+            self._try_send(cid)
 
     @staticmethod
     def _wal_apply(entry, state):
-        """Aplica las transacciones del log al estado en memoria tras un reinicio."""
-        client_id = entry.get("client_id")
+        client_id = str(entry.get("client_id"))
         
         if entry["type"] == "origin":
             suspicious = state["suspicious_accounts"].setdefault(client_id, {})
@@ -79,41 +86,39 @@ class ScatterGatherDetector:
             
         elif entry["type"] == "eof_count":
             state["eof"][client_id] = entry["count"]
-            
-        elif entry["type"] == "eof_done":
-            state["eof"].pop(client_id, None)
-            state["suspicious_accounts"].pop(client_id, None)
-            state["accounts"].pop(client_id, None)
 
-    def _process_eof(self, message, msg_id):
-        client_id = message.get("client_id")
-        if client_id is None:
+    def _try_send(self, client_id):
+        if self.eof_count.get(client_id, 0) < Q4_GRAPH_AMOUNT:
             return
-
-        self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
-
-        if self.eof_count[client_id] < Q4_GRAPH_AMOUNT:
-            return
-        
         final_dict = {}
-        if client_id in self.accounts.keys():
-            for account, transactions in self.suspicious_accounts[client_id].items():
+        if client_id in self.accounts:
+            for account, transactions in self.suspicious_accounts.get(client_id, {}).items():
                 for middle_man, transaction in transactions.items():
                     for final_account, final_transactions in self.accounts[client_id].items():
-                        if middle_man in final_transactions.keys():
-                            if account not in final_dict.keys():
+                        if middle_man in final_transactions:
+                            if account not in final_dict:
                                 final_dict[account] = {}
-                            if final_account not in final_dict[account].keys():
-                                final_dict[account][final_account]=0
+                            if final_account not in final_dict[account]:
+                                final_dict[account][final_account] = 0
                             final_dict[account][final_account] += 1
-        self.output_queue.send(message_protocol.internal.serialize({"client_id": client_id, "suspicious_accounts": final_dict}))
-        self.output_queue.send( message_protocol.internal.serialize(
-            {"nodo_id": ID, "client_id": client_id}
-        ))
-        self.suspicious_accounts.pop(client_id, None)
-        self.accounts.pop(client_id, None)
-        self.eof_count.pop(client_id, None)
-        self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})
+        self.wal.tx_begin(f"results_{client_id}")
+        self.output_queue.send(message_protocol.internal.serialize({"client_id": int(client_id), "suspicious_accounts": final_dict}))
+        self.output_queue.send(message_protocol.internal.serialize({"nodo_id": ID, "client_id": int(client_id)}))
+        self.wal.tx_commit(f"results_{client_id}")
+
+    def _process_eof(self, message, msg_id):
+        client_id = str(message.get("client_id"))
+        if client_id == "None":
+            return
+
+        current_count = self.eof_count.get(client_id, 0)
+        if current_count >= Q4_GRAPH_AMOUNT:
+            return
+        self.eof_count[client_id] = current_count + 1
+        self.wal.append(msg_id, {"type": "eof_count", "client_id": client_id, "count": self.eof_count[client_id]})
+        if self.eof_count[client_id] < Q4_GRAPH_AMOUNT:
+            return
+        self._try_send(client_id)
 
     def process_message(self, message, ack, nack, ctx):
         msg_id = ctx.get("msg_id")
@@ -125,7 +130,7 @@ class ScatterGatherDetector:
             if len(deserialized) == 2:
                 self._process_eof(deserialized, msg_id)
             elif "origin_account" in deserialized.keys():
-                client_id=deserialized.pop("client_id")
+                client_id=str(deserialized.pop("client_id"))
                 self.wal.append(msg_id, {
                         "type": "origin", 
                         "client_id": client_id, 
@@ -136,7 +141,7 @@ class ScatterGatherDetector:
                     self.suspicious_accounts[client_id] = {}
                 self.suspicious_accounts[client_id][deserialized["origin_account"]] = deserialized["transactions"]
             elif "destination_account" in deserialized.keys():
-                client_id=deserialized.pop("client_id")
+                client_id=str(deserialized.pop("client_id"))
                 self.wal.append(msg_id, {
                         "type": "destination", 
                         "client_id": client_id, 
