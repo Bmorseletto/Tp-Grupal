@@ -37,7 +37,7 @@ class AvgFilter:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
         self.wal = WAL(WAL_DIR)
         state, _, _ = self.wal.backup_load(default=(
-            {"transactions": {}, "averages": {}, "avg_workers": {}, "date_workers": {}, "results_sent": [], "__msg_counters": {}},
+            {"transactions": {}, "averages": {}, "avg_workers": {}, "date_workers": {}, "__msg_counters": {}},
             0, set(),
         ))
         self.transactions_per_client = {
@@ -54,20 +54,11 @@ class AvgFilter:
         state["avg_workers"] = self.avg_worker_finished_with_client
         self.date_filter_finished_with_client = {str(k): set(v) for k, v in state["date_workers"].items()}
         state["date_workers"] = self.date_filter_finished_with_client
-        sent = state.get("results_sent", [])
-        self._results_sent = set(str(c) for c in sent) if sent else set()
         middleware._init_msg_id_counters(state.get("__msg_counters", {}))
         self._orphans = self.wal.recover(self._wal_apply, state)
         for orphan in self._orphans:
             if orphan.startswith("results_"):
-                cid = orphan[len("results_"):]
-                self._results_sent.add(cid)
-                self.transactions_per_client.pop(cid, None)
-                self.payment_formats_averages.pop(cid, None)
-                self.avg_worker_finished_with_client.pop(cid, None)
-                self.date_filter_finished_with_client.pop(cid, None)
                 self.wal.tx_commit(orphan)
-                self.wal.append(None, {"type": "results_sent", "client_id": cid})
         for cid in list(self.avg_worker_finished_with_client):
             self._try_send_results(cid)
 
@@ -83,11 +74,6 @@ class AvgFilter:
             state["averages"].setdefault(cid, {}).update(entry["avg"])
         elif entry["type"] == "date_eof":
             state["date_workers"].setdefault(cid, set()).add(entry["nodo_id"])
-        elif entry["type"] == "results_sent":
-            state["transactions"].pop(cid, None)
-            state["averages"].pop(cid, None)
-            state["avg_workers"].pop(cid, None)
-            state["date_workers"].pop(cid, None)
 
     def _process_data(self, data, msg_id=None):
         client_id = str(data.pop("client_id"))
@@ -135,8 +121,6 @@ class AvgFilter:
         self._try_send_results(client_id, msg_id)
 
     def _try_send_results(self, client_id, msg_id=None):
-        if client_id in self._results_sent:
-            return
         if client_id not in self.avg_worker_finished_with_client:
             return
         if len(self.avg_worker_finished_with_client[client_id]) < AVG_CALC_AMOUNT:
@@ -161,12 +145,6 @@ class AvgFilter:
                     continue
         self.output_queue.send(message_protocol.internal.serialize({"nodo_id": ID, "client_id": int(client_id)}))
         self.wal.tx_commit(f"results_{client_id}")
-        self.transactions_per_client.pop(client_id, None)
-        self.payment_formats_averages.pop(client_id, None)
-        self.avg_worker_finished_with_client.pop(client_id, None)
-        self.date_filter_finished_with_client.pop(client_id, None)
-        self._results_sent.add(client_id)
-        self.wal.append(msg_id, {"type": "results_sent", "client_id": client_id})
 
     def process_messsage(self, message, ack, nack, ctx):
         msg_id = ctx.get("msg_id")
@@ -186,7 +164,6 @@ class AvgFilter:
                 "averages": self.payment_formats_averages,
                 "avg_workers": self.avg_worker_finished_with_client,
                 "date_workers": self.date_filter_finished_with_client,
-                "results_sent": list(self._results_sent),
                 "__msg_counters": middleware.get_msg_id_counters(),
             })
             ack()
@@ -205,7 +182,6 @@ class AvgFilter:
             "averages": self.payment_formats_averages,
             "avg_workers": self.avg_worker_finished_with_client,
             "date_workers": self.date_filter_finished_with_client,
-            "results_sent": list(self._results_sent),
             "__msg_counters": middleware.get_msg_id_counters(),
         }, self.wal.last_seq())
         self.input_exchange.stop_consuming()

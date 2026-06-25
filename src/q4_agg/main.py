@@ -14,7 +14,8 @@ RESULTS_STORAGE = "/output/q4_agg_"
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
-WAL_DIR = os.environ.get("WAL_DIR", f"/wal/agg_q4_{0}")
+ID = int(os.environ.get("ID", "0"))
+WAL_DIR = os.environ.get("WAL_DIR", f"/wal/agg_q4_{ID}")
 
 class AggregatorQ4:
     def __init__(self):
@@ -22,7 +23,7 @@ class AggregatorQ4:
             MOM_HOST, INPUT_QUEUE
         )
         self.output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
-            MOM_HOST, OUTPUT_QUEUE
+            MOM_HOST, OUTPUT_QUEUE, source_id=f"AggQ4_{ID}"
         )
         self.worker_finished_with_client = {}
         self.results = {}
@@ -42,26 +43,35 @@ class AggregatorQ4:
             state.setdefault("results", {})
             state.setdefault("__msg_counters", {})
             
-        self.worker_finished_with_client = state["workers"]
-        self.results = state["results"]
+        self.worker_finished_with_client = {str(k): set(v) for k, v in state["workers"].items()}
+        state["workers"] = self.worker_finished_with_client
+        self.results = {str(k): v for k, v in state["results"].items()}
+        state["results"] = self.results
         
         if hasattr(middleware, '_init_msg_id_counters'):
             middleware._init_msg_id_counters(state["__msg_counters"])
             
         self._orphans = self.wal.recover(self._wal_apply, state)
+        for orphan in self._orphans:
+            if orphan.startswith("results_"):
+                cid = orphan[len("results_"):]
+                self.worker_finished_with_client.pop(cid, None)
+                self.results.pop(cid, None)
+                self.wal.tx_commit(orphan)
+                self.wal.append(None, {"type": "eof_done", "client_id": cid})
+        for cid in list(self.worker_finished_with_client):
+            if len(self.worker_finished_with_client[cid]) == Q4_SCATTER_AMOUNT:
+                self._send_results(cid)
 
     @staticmethod
     def _wal_apply(entry, state):
-        """Reconstruye el estado a partir de los logs de la WAL en caso de caída."""
-        client_id = entry["client_id"]
+        client_id = str(entry["client_id"])
         
         if entry["type"] == "data":
             sus_accounts = entry["sus_accounts"]
-            if client_id not in state["results"]:
-                state["results"][client_id] = {}
+            state["results"].setdefault(client_id, {})
             for account, final_accounts in sus_accounts.items():
-                if account not in state["results"][client_id]:
-                    state["results"][client_id][account] = {}
+                state["results"][client_id].setdefault(account, {})
                 for final_account, transaction_amount in final_accounts.items():
                     state["results"][client_id][account][final_account] = state["results"][client_id][account].get(final_account, 0) + transaction_amount
 
@@ -75,49 +85,50 @@ class AggregatorQ4:
 
     def _process_data(self, result, msg_id):
         try:
-            client_id = result.get("client_id")
+            client_id = str(result.get("client_id"))
             sus_accounts = result.get("suspicious_accounts")
-            if client_id not in  self.results.keys():
+            if client_id not in self.results:
                 self.results[client_id] = {}
             for account, final_accounts in sus_accounts.items():
-                if account not in self.results[client_id].keys():
+                if account not in self.results[client_id]:
                     self.results[client_id][account] = {}
                 for final_account, transaction_amount in final_accounts.items():
-                    self.results[client_id][account][final_account]=self.results[client_id][account].get(final_account, 0) + transaction_amount
+                    self.results[client_id][account][final_account] = self.results[client_id][account].get(final_account, 0) + transaction_amount
             self.wal.append(msg_id, {"type": "data", "client_id": client_id, "sus_accounts": sus_accounts})
         except Exception as e:
             logging.error(f"PROCESS DATA ERROR: {e}")
 
+    def _send_results(self, client_id, msg_id=None):
+        self.wal.tx_begin(f"results_{client_id}")
+        for account, final_accounts in self.results.get(client_id, {}).items():
+            for final_account, transaction_amount in final_accounts.items():
+                origin = account.split(',')
+                dest = final_account.split(',')
+                if transaction_amount >= 5:
+                    msg = {
+                        "from_bank": origin[0],
+                        "from_account": origin[1],
+                        "to_bank": dest[0],
+                        "to_account": dest[1]
+                    }
+                    self.output_queue.send(message_protocol.internal.serialize([int(client_id), "q4", [msg]]))
+        self.output_queue.send(message_protocol.internal.serialize([int(client_id), "q4"]))
+        self.wal.tx_commit(f"results_{client_id}")
+        self.results.pop(client_id, None)
+        del self.worker_finished_with_client[client_id]
+        self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})
+        logging.info(f"Q4 RESULTS SENT for client {client_id}")
+
     def _process_eof(self, eof_message, msg_id):
         try:
-            client_id = eof_message["client_id"]
+            client_id = str(eof_message["client_id"])
             nodo_id = eof_message["nodo_id"]
 
-            if client_id not in self.worker_finished_with_client:
-                self.worker_finished_with_client[client_id] = set()
-            self.worker_finished_with_client[client_id].add(nodo_id)
+            self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
             self.wal.append(msg_id, {"type": "eof_count", "client_id": client_id, "nodo_id": nodo_id})
 
             if len(self.worker_finished_with_client[client_id]) == Q4_SCATTER_AMOUNT:
-                path = RESULTS_STORAGE + f"{client_id}.csv"
-                results = []
-                for account, final_accounts in self.results[client_id].items():
-                    for final_account, transaction_amount in final_accounts.items():
-                        origin = account.split(',')
-                        dest =final_account.split(',')
-                        if transaction_amount >= 5:
-                            message = {
-                                "from_bank":origin[0],
-                                "from_account":origin[1],
-                                "to_bank" : dest[0],
-                                "to_account":dest[1]
-                            }
-                            self.output_queue.send(message_protocol.internal.serialize([client_id, "q4", [message]]))
-                self.output_queue.send(message_protocol.internal.serialize([client_id, "q4"]))
-                logging.info(f"Q4 RESULTS SENT for client {client_id}")
-                self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})
-                del self.worker_finished_with_client[client_id]
-                self.results.pop(client_id, None)
+                self._send_results(client_id, msg_id)
         except Exception as e:
             logging.error(f"EOF ERROR: {e}")
 
@@ -150,6 +161,11 @@ class AggregatorQ4:
 
 
     def stop(self):
+        self.wal.backup_save({
+            "workers": self.worker_finished_with_client,
+            "results": self.results,
+            "__msg_counters": middleware.get_msg_id_counters() if hasattr(middleware, 'get_msg_id_counters') else {}
+        }, self.wal.last_seq())
         self.input_queue.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
