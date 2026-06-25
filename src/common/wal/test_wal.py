@@ -1,4 +1,5 @@
 import os
+import time
 import tempfile
 import shutil
 import sys
@@ -64,6 +65,45 @@ def test_orphan_tx_survives_crash():
 
         wal2 = WAL(tmpdir)
         assert wal2.orphan_tx_ids() == {"src_0_3"}
+        wal2.close()
+    finally:
+        shutil.rmtree(tmpdir)
+
+
+def test_cleanup_expired_orphan_txs():
+    tmpdir = tempfile.mkdtemp(prefix="wal_test_")
+    try:
+        wal = WAL(tmpdir)
+        wal.tx_begin("src_0_4")
+        tx_path = os.path.join(wal._tx_dir, "src_0_4.tx")
+        old_time = time.time() - 10
+        os.utime(tx_path, (old_time, old_time))
+
+        cleaned = wal.cleanup_expired_orphan_txs(ttl_seconds=1)
+        assert cleaned == {"src_0_4"}
+        assert wal.orphan_tx_ids() == set()
+        wal.close()
+    finally:
+        shutil.rmtree(tmpdir)
+
+
+def test_recover_cleans_expired_orphan_txs_before_orphan_detection():
+    tmpdir = tempfile.mkdtemp(prefix="wal_test_")
+    try:
+        wal = WAL(tmpdir)
+        wal.tx_begin("src_0_5")
+        wal.tx_begin("src_0_6")
+        old_path = os.path.join(wal._tx_dir, "src_0_5.tx")
+        old_time = time.time() - 10
+        os.utime(old_path, (old_time, old_time))
+        wal.close()
+
+        wal2 = WAL(tmpdir)
+        backup_state, _, _ = wal2.backup_load(default=({}, 0, set()))
+        orphans = wal2.recover(lambda record, st: None, backup_state)
+
+        assert orphans == {"src_0_6"}
+        assert wal2.orphan_tx_ids() == {"src_0_6"}
         wal2.close()
     finally:
         shutil.rmtree(tmpdir)

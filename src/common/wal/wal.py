@@ -1,11 +1,14 @@
 import json
 import os
+import time
 import tempfile
 import shutil
 import logging
 import threading
 
 logger = logging.getLogger(__name__)
+ORPHAN_TTL = 1800
+ORPHAN_CLEANUP_INTERVAL_SECONDS = 1800
 
 
 def _json_serial(obj):
@@ -113,7 +116,12 @@ class WAL:
         self._last_seq = 0
         self._log_fd = None
         self.processed_ids = set()
+        self._orphan_ttl_seconds = int(ORPHAN_TTL)
+        self._cleanup_interval_seconds = int(os.environ.get("ORPHAN_TX_CLEANUP_INTERVAL_SECONDS", str(ORPHAN_CLEANUP_INTERVAL_SECONDS)))
+        self._cleanup_stop = threading.Event()
         self._init_log()
+        self._cleanup_thread = threading.Thread(target=self._orphan_cleanup_loop, daemon=True)
+        self._cleanup_thread.start()
 
     def _init_log(self):
         if os.path.exists(self._log_path):
@@ -209,6 +217,7 @@ class WAL:
         if self._last_seq % interval == 0:
             self.backup_save(state, self._last_seq)
             self.truncate(self._last_seq)
+            self.cleanup_expired_orphan_txs()
 
     def tx_begin(self, msg_id):
         """Create a transaction file for *msg_id* BEFORE sending downstream.
@@ -237,6 +246,49 @@ class WAL:
             os.remove(path)
         except FileNotFoundError:
             pass
+
+    def _orphan_cleanup_loop(self):
+        while not self._cleanup_stop.wait(self._cleanup_interval_seconds):
+            try:
+                self.cleanup_expired_orphan_txs()
+            except Exception:
+                logger.exception("periodic orphan tx cleanup failed")
+
+    def cleanup_expired_orphan_txs(self, ttl_seconds=None):
+        """Remove orphan ``.tx`` files older than the configured TTL.
+
+        Returns the set of cleaned msg_ids.
+        """
+        if ttl_seconds is None:
+            ttl_seconds = self._orphan_ttl_seconds
+        if ttl_seconds < 0:
+            return set()
+
+        if not os.path.isdir(self._tx_dir):
+            return set()
+
+        now = time.time()
+        cleaned = set()
+        for name in os.listdir(self._tx_dir):
+            if not name.endswith(".tx") or name.startswith("."):
+                continue
+            path = os.path.join(self._tx_dir, name)
+            try:
+                if now - os.path.getmtime(path) <= ttl_seconds:
+                    continue
+            except OSError:
+                continue
+            msg_id = name[:-3]
+            try:
+                os.remove(path)
+                cleaned.add(msg_id)
+            except FileNotFoundError:
+                pass
+
+        if cleaned:
+            logger.info("cleanup: removed %d expired orphan tx(s): %s",
+                        len(cleaned), cleaned)
+        return cleaned
 
     def orphan_tx_ids(self):
         """Return the set of msg_ids with orphan ``.tx`` files.
@@ -302,6 +354,7 @@ class WAL:
 
         Returns the set of orphan msg_ids found.
         """
+        self.cleanup_expired_orphan_txs()
         orphans = self.orphan_tx_ids()
         backup_result = self.backup_load(default=(None, 0, set()))
         _, backup_seq, backup_processed = backup_result
@@ -330,7 +383,14 @@ class WAL:
         return orphans
 
     def close(self):
-        """Flush and close the log file descriptor."""
+        """Stop background cleanup and close the log file descriptor."""
+        try:
+            self._cleanup_stop.set()
+            if hasattr(self, "_cleanup_thread"):
+                self._cleanup_thread.join(timeout=2)
+        except Exception:
+            pass
+
         if self._log_fd and not self._log_fd.closed:
             try:
                 self._log_fd.flush()
