@@ -123,7 +123,10 @@ class WAL:
                     if line:
                         parts = line.split("\t", 1)
                         if parts and parts[0].strip():
-                            seq = int(parts[0])
+                            try:
+                                seq = int(parts[0])
+                            except ValueError:
+                                continue
                             if seq > self._last_seq:
                                 self._last_seq = seq
         self._log_fd = open(self._log_path, "a")
@@ -162,11 +165,18 @@ class WAL:
                 parts = line.split("\t", 2)
                 if len(parts) != 3:
                     continue
-                seq = int(parts[0])
+                try:
+                    seq = int(parts[0])
+                except ValueError:
+                    continue
                 if seq <= after_seq:
                     continue
                 msg_id = parts[1]
-                record = _loads(parts[2])
+                try:
+                    record = _loads(parts[2])
+                except Exception:
+                    logger.warning("skipping corrupt WAL entry seq=%d", seq)
+                    continue
                 yield seq, msg_id, record
 
     def truncate(self, up_to_seq):
@@ -175,7 +185,17 @@ class WAL:
                 lines = f.readlines()
         except FileNotFoundError:
             return
-        kept = [l for l in lines if l.split("\t", 1) and l.split("\t", 1)[0].strip() and int(l.split("\t", 1)[0]) > up_to_seq]
+        kept = []
+        for l in lines:
+            parts = l.split("\t", 1)
+            if not parts or not parts[0].strip():
+                continue
+            try:
+                seq = int(parts[0])
+            except ValueError:
+                continue
+            if seq > up_to_seq:
+                kept.append(l)
         if self._log_fd and not self._log_fd.closed:
             self._log_fd.flush()
             self._log_fd.close()
