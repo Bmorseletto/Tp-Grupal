@@ -111,8 +111,8 @@ def _make_result_callback(client_list, queries_remaining):
                     break
             
             if target_index is None:
-                #logging.error(f"no matching client for result {client_id}")
-                #nack()
+                logging.warning(f"no matching client for result {client_id}, acking stale message")
+                ack()
                 return
 
             if len(deserialized) == 3:
