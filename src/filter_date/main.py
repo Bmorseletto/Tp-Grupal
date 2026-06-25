@@ -2,9 +2,11 @@ from datetime import datetime
 import os
 import logging
 import signal
+import time
 import zlib
 
 from common import middleware, message_protocol, heartbeat
+from common.client_state_ttl import ClientStateTTL
 from common.wal import WAL
 
 ID = int(os.environ["ID"])
@@ -44,6 +46,7 @@ class DateFilter:
             for i in range(len(self.outputs_prefix))
         ]
         self.eof_count = {}
+        self.client_state_ttl = ClientStateTTL()
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
@@ -55,14 +58,41 @@ class DateFilter:
         self._orphans = self.wal.recover(self._wal_apply, state)
         for cid in list(self.eof_count):
             self._try_send_eof(cid)
-
+ 
     @staticmethod
     def _wal_apply(entry, state):
         cid = str(entry["client_id"])
         if entry["type"] == "eof_count":
             state["eof"][cid] = entry["count"]
 
+    def _cleanup_expired_clients(self):
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+
+    def _update_last_seen(self, client_id):
+        self.client_state_ttl.update_last_seen(client_id)
+
+    def _expire_client_state(self, client_id):
+        logging.info(
+            f"Client {client_id} expired after {self.client_state_ttl.ttl_seconds} seconds without updates; dropping state"
+        )
+        self.eof_count.pop(client_id, None)
+
+    def _cleanup_expired_clients(self):
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+
+    def _update_last_seen(self, client_id):
+        self.client_state_ttl.update_last_seen(client_id)
+
+    def _expire_client_state(self, client_id):
+        logging.info(
+            f"Client {client_id} expired after {self.client_state_ttl.ttl_seconds} seconds without updates; dropping state"
+        )
+        self.eof_count.pop(client_id, None)
+
     def _process_data(self, transaction):
+        self._cleanup_expired_clients()
+        client_id = transaction.get("client_id")
+        self._update_last_seen(client_id)
         transaction_timestamp = datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M").replace(hour=0, minute=0, second=0, microsecond=0)
         initial_date = datetime.strptime(INITIAL_DATE, "%Y/%m/%d")
         end_date = datetime.strptime(END_DATE, "%Y/%m/%d")
@@ -93,6 +123,8 @@ class DateFilter:
                     )
 
     def _try_send_eof(self, client_id):
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         if self.eof_count.get(client_id, 0) < UPSTREAM_AMOUNT:
             return
         for i, output_exchange in enumerate(self.output_exchanges):
@@ -144,6 +176,8 @@ class DateFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.client_state_ttl.clear()
+
 
     def close(self):
         self.wal.close()

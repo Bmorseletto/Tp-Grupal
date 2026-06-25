@@ -3,6 +3,7 @@ import logging
 import signal
 
 from common import middleware, message_protocol, heartbeat
+from common.client_state_ttl import ClientStateTTL
 from common.wal import WAL
 
 ID = int(os.environ["ID"])
@@ -31,6 +32,7 @@ class MaxTransactionFilter:
         )
         self.max_transaction_per_bank = {}
         self.eof_count = {}
+        self.client_state_ttl = ClientStateTTL()
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
@@ -57,6 +59,8 @@ class MaxTransactionFilter:
 
     def _process_data(self, transaction, msg_id=None):
         client_id = str(transaction.pop(CLIENT_ID_KEY))
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+        self.client_state_ttl.update_last_seen(client_id)
         bank_id = str(transaction[BANK_KEY])
         if client_id not in self.max_transaction_per_bank:
             self.max_transaction_per_bank[client_id] = {}
@@ -68,6 +72,8 @@ class MaxTransactionFilter:
 
     def _process_eof(self, deserialized_message, msg_id=None):
         client_id = str(deserialized_message["client_id"])
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+        self.client_state_ttl.update_last_seen(client_id)
         current_count = self.eof_count.get(client_id, 0)
         if current_count >= UPSTREAM_AMOUNT:
             self.eof_count.pop(client_id, None)
@@ -83,7 +89,15 @@ class MaxTransactionFilter:
             self.output_queue.send(message_protocol.internal.serialize({"nodo_id": ID, CLIENT_ID_KEY: int(client_id), "results": results}))
         self.eof_count.pop(client_id, None)
         self.max_transaction_per_bank.pop(client_id, None)
+        
+        self.max_transaction_per_bank.pop(client_id, None)
+        self.client_state_ttl.last_seen.pop(client_id, None)
         self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})
+
+    def _expire_client_state(self, client_id):
+        self.eof_count.pop(client_id, None)
+        self.max_transaction_per_bank.pop(client_id, None)
+
 
     def process_messsage(self, message, ack, nack, ctx):
         msg_id = ctx.get("msg_id")
@@ -117,7 +131,7 @@ class MaxTransactionFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-
+        self.client_state_ttl.clear()
     def close(self):
         self.wal.close()
         self.input_exchange.close()

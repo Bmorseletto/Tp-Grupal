@@ -2,8 +2,10 @@ from collections import defaultdict
 import os
 import logging
 import signal
+import time
 from common import middleware, message_protocol, heartbeat
 from common.wal import WAL
+from common.client_state_ttl import ClientStateTTL
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -14,6 +16,7 @@ Q4_GRAPH_AMOUNT = int(os.environ["Q4_GRAPH_AMOUNT"])
 SCATTER_DETECTOR_STORAGE = "/output/q4_scatter_"
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
+
 NODE_NAME =  os.environ["NODE_NAME"]
 WAL_DIR = os.environ.get("WAL_DIR", f"/wal/scatter_det_{ID}")
 
@@ -35,6 +38,7 @@ class ScatterGatherDetector:
         self.accounts = {}
         self.eof_count = {}
         self.results = {}
+        self.client_state_ttl = ClientStateTTL()
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
@@ -105,6 +109,11 @@ class ScatterGatherDetector:
         self.output_queue.send(message_protocol.internal.serialize({"client_id": int(client_id), "suspicious_accounts": final_dict}))
         self.output_queue.send(message_protocol.internal.serialize({"nodo_id": ID, "client_id": int(client_id)}))
         self.wal.tx_commit(f"results_{client_id}")
+        self.results.pop(client_id, None)
+        self.eof_count.pop(client_id, None)
+        self.suspicious_accounts.pop(client_id, None)
+        self.accounts.pop(client_id, None)
+        self.client_state_ttl.remove(client_id)
 
     def _process_eof(self, message, msg_id):
         client_id = str(message.get("client_id"))
@@ -120,6 +129,18 @@ class ScatterGatherDetector:
             return
         self._try_send(client_id)
 
+    def _expire_client_state(self, client_id):
+        self.results.pop(client_id, None)
+        self.eof_count.pop(client_id, None)
+        self.suspicious_accounts.pop(client_id, None)
+        self.accounts.pop(client_id, None)
+
+    def _cleanup_expired_clients(self):
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+
+    def _update_last_seen(self, client_id):
+        self.client_state_ttl.update_last_seen(client_id)
+
     def process_message(self, message, ack, nack, ctx):
         msg_id = ctx.get("msg_id")
         if msg_id and msg_id in self.wal.processed_ids:
@@ -131,6 +152,8 @@ class ScatterGatherDetector:
                 self._process_eof(deserialized, msg_id)
             elif "origin_account" in deserialized.keys():
                 client_id=str(deserialized.pop("client_id"))
+                self._cleanup_expired_clients()
+                self._update_last_seen(client_id)
                 self.wal.append(msg_id, {
                         "type": "origin", 
                         "client_id": client_id, 
@@ -142,6 +165,8 @@ class ScatterGatherDetector:
                 self.suspicious_accounts[client_id][deserialized["origin_account"]] = deserialized["transactions"]
             elif "destination_account" in deserialized.keys():
                 client_id=str(deserialized.pop("client_id"))
+                self._cleanup_expired_clients()
+                self._update_last_seen(client_id)
                 self.wal.append(msg_id, {
                         "type": "destination", 
                         "client_id": client_id, 
@@ -183,6 +208,7 @@ class ScatterGatherDetector:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.client_state_ttl.clear()
 
     def close(self):
         self.wal.close()

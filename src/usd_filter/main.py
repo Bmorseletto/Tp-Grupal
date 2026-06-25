@@ -2,8 +2,10 @@ import os
 import logging
 import zlib
 import signal
+import time
 
 from common import middleware, message_protocol, heartbeat
+from common.client_state_ttl import ClientStateTTL
 from common.wal import WAL
 
 ID = int(os.environ["ID"])
@@ -53,6 +55,7 @@ class CurrencyFilter:
         )
         self.eof_count = {}
         self.heartbeats = []
+        self.client_state_ttl = ClientStateTTL()
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(
                 heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT)
@@ -71,6 +74,9 @@ class CurrencyFilter:
             state["eof"].pop(entry["client_id"], None)
 
     def _process_data(self, transaction):
+        client_id = transaction.get("client_id")
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         for i in range(TOTAL_QUERIES):
             send_to_query_i = getattr(self, f"_send_to_query_{i + 1}")
             send_to_query_i(transaction)
@@ -138,8 +144,11 @@ class CurrencyFilter:
 
     def _process_eof(self, deserialized_message, msg_id=None):
         client_id = deserialized_message[0]
+        client_id = deserialized_message[0]
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         self.wal.append(msg_id, {"type": "eof_count", "client_id": client_id, "count": self.eof_count[client_id]})
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         for i, output_exchange in enumerate(self.output_exchanges):
             output_exchange.send_by_key(
                 message_protocol.internal.serialize(
@@ -156,6 +165,16 @@ class CurrencyFilter:
         )
         self.eof_count.pop(client_id, None)
         self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})
+        self.client_state_ttl.remove(client_id)
+
+    def _expire_client_state(self, client_id):
+        pass
+
+    def _cleanup_expired_clients(self):
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+
+    def _update_last_seen(self, client_id):
+        self.client_state_ttl.update_last_seen(client_id)
 
     def process_messsage(self, message, ack, nack, ctx):
         msg_id = ctx.get("msg_id")
@@ -186,6 +205,7 @@ class CurrencyFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.client_state_ttl.clear()
 
     def close(self):
         self.wal.close()

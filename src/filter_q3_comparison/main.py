@@ -1,9 +1,11 @@
 import os
 import logging
 import signal
+import time
 
 from common import middleware, message_protocol, heartbeat
 from common.wal import WAL
+from common.client_state_ttl import ClientStateTTL
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -32,6 +34,7 @@ class AvgFilter:
         self.date_filter_finished_with_client = {}
         self.payment_formats_averages = {}
         self.transactions_per_client = {}
+        self.client_state_ttl = ClientStateTTL()
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
@@ -77,6 +80,8 @@ class AvgFilter:
 
     def _process_data(self, data, msg_id=None):
         client_id = str(data.pop("client_id"))
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+        self.client_state_ttl.update_last_seen(client_id)
         payment_format = str(data.get("payment_format", ""))
         if client_id not in self.transactions_per_client:
             self.transactions_per_client[client_id] = {}
@@ -99,6 +104,8 @@ class AvgFilter:
 
     def _process_eof(self, deserialized_message, msg_id=None):
         client_id = str(deserialized_message["client_id"])
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+        self.client_state_ttl.update_last_seen(client_id)
         nodo_id = deserialized_message["nodo_id"]
         if "avg" in deserialized_message:
             self.avg_worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
@@ -119,6 +126,7 @@ class AvgFilter:
             })
 
         self._try_send_results(client_id, msg_id)
+        self.client_state_ttl.remove(client_id)
 
     def _try_send_results(self, client_id, msg_id=None):
         if client_id not in self.avg_worker_finished_with_client:
@@ -175,6 +183,30 @@ class AvgFilter:
         for heartbeat in self.heartbeats:
             heartbeat.start()
         self.input_exchange.start_consuming(self.process_messsage)
+ 
+    def _expire_client_state(self, client_id):
+        self.avg_worker_finished_with_client.pop(client_id, None)
+        self.date_filter_finished_with_client.pop(client_id, None)
+        self.payment_formats_averages.pop(client_id, None)
+        self.transactions_per_client.pop(client_id, None)
+
+    def _cleanup_expired_clients(self):
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+
+    def _update_last_seen(self, client_id):
+        self.client_state_ttl.update_last_seen(client_id)
+
+    def _expire_client_state(self, client_id):
+        self.avg_worker_finished_with_client.pop(client_id, None)
+        self.date_filter_finished_with_client.pop(client_id, None)
+        self.payment_formats_averages.pop(client_id, None)
+        self.transactions_per_client.pop(client_id, None)
+
+    def _cleanup_expired_clients(self):
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+
+    def _update_last_seen(self, client_id):
+        self.client_state_ttl.update_last_seen(client_id)
 
     def stop(self):
         self.wal.backup_save({
@@ -187,6 +219,7 @@ class AvgFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.client_state_ttl.clear()
 
     def close(self):
         self.wal.close()

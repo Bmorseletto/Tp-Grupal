@@ -4,6 +4,11 @@ import signal
 
 from common import middleware, message_protocol, heartbeat
 from common.wal import WAL
+import csv
+import time
+
+from common import middleware, message_protocol, heartbeat
+from common.client_state_ttl import ClientStateTTL
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
@@ -34,6 +39,7 @@ class JoinFilterQ2:
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
+        self.client_state_ttl = ClientStateTTL()
         self.wal = WAL(WAL_DIR)
         self._recover_state()
         
@@ -52,6 +58,20 @@ class JoinFilterQ2:
         self.clients_accounts_eof = set(str(c) for c in state["accounts_eof"])
         for cid in list(self.clients_accounts_eof):
             self._try_send_results(cid)
+
+    def _expire_client_state(self, client_id):
+        logging.info(
+            f"Client {client_id} expired after {self.client_state_ttl.ttl_seconds} seconds without updates; dropping state"
+        )
+        self.results.pop(client_id, None)
+        self.worker_finished_with_client.pop(client_id, None)
+        self.clients_accounts_eof.discard(client_id)
+
+    def _cleanup_expired_clients(self):
+        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+
+    def _update_last_seen(self, client_id):
+        self.client_state_ttl.update_last_seen(client_id)
 
     @staticmethod
     def _wal_apply(entry, state):
@@ -94,6 +114,8 @@ class JoinFilterQ2:
 
     def _process_transaction(self, transaction_message, msg_id=None):
         client_id = transaction_message["client_id"]
+        self._cleanup_expired_clients()
+        self._update_last_seen(client_id)
         cid = str(client_id)
         nodo_id = transaction_message["nodo_id"]
         results = transaction_message["results"]
@@ -117,6 +139,7 @@ class JoinFilterQ2:
         del self.worker_finished_with_client[client_id]
         self.clients_accounts_eof.discard(client_id)
         self.wal.append(msg_id, {"type": "results_sent", "client_id": client_id})
+        self.client_state_ttl.remove(client_id)
         logging.info(f"finished processing EOF of {client_id} sent results to join")
 
     def _relate_bank_id_bank_name(self, client_id):
@@ -158,6 +181,10 @@ class JoinFilterQ2:
                 self.clients_accounts_eof.add(cid)
                 self.wal.append(msg_id, {"type": "accounts_eof", "client_id": cid})
                 self._try_send_results(cid, msg_id)
+                self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
+                self.client_state_ttl.update_last_seen(client_id)
+                # if client_id in self.worker_finished_with_client and len(self.worker_finished_with_client[client_id]) == Q2_FILTER_AMOUNT:
+                #     self._send_results(client_id)
             else:
                 self.banks[str(deserialized_message["bank_id"])] = deserialized_message["bank_name"]
                 self.wal.append(msg_id, {"type": "bank_map", "bank_id": str(deserialized_message["bank_id"]), "bank_name": deserialized_message["bank_name"]})
@@ -185,6 +212,7 @@ class JoinFilterQ2:
         self.input_queue.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
+        self.client_state_ttl.clear()
 
     def close(self):
         self.wal.close()
