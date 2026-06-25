@@ -22,31 +22,31 @@ services:
     - ./datasets:/datasets
     - ./output:/output
   client_1:
-    build:
-      context: ./src/
-      dockerfile: client/Dockerfile
-    container_name: client_1
-    depends_on:
-    - currency_filter_0
-    - currency_filter_1
-    - currency_filter_2
-    - query_5_date_filter_0
-    - query_5_date_filter_1
-    - query_5_date_filter_2
-    environment:
-    - TRANSACTIONS_INPUT_FILE=/datasets/input_1.csv
-    - ACCOUNTS_INPUT_FILE=/datasets/accounts_1.csv
-    - OUTPUT_FILE=/output/output_1.csv
-    - PYTHONUNBUFFERED=1
-    - SERVER_HOST=gateway
-    - SERVER_PORT=5678
-    volumes:
-    - ./datasets:/datasets
-    - ./output:/output
+  build:
+  context: ./src/
+  dockerfile: client/Dockerfile
+  container_name: client_1
+  depends_on:
+  - currency_filter_0
+  - currency_filter_1
+  - currency_filter_2
+  - query_5_date_filter_0
+  - query_5_date_filter_1
+  - query_5_date_filter_2
+  environment:
+  - TRANSACTIONS_INPUT_FILE=/datasets/input_1.csv
+  - ACCOUNTS_INPUT_FILE=/datasets/accounts_1.csv
+  - OUTPUT_FILE=/output/output_1.csv
+  - PYTHONUNBUFFERED=1
+  - SERVER_HOST=gateway
+  - SERVER_PORT=5678
+  volumes:
+  - ./datasets:/datasets
+  - ./output:/output
   client_2:
     build:
-      context: ./src/
-      dockerfile: client/Dockerfile
+    context: ./src/
+    dockerfile: client/Dockerfile
     container_name: client_2
     depends_on:
     - currency_filter_0
@@ -723,7 +723,6 @@ services:
       - NODE_NAME=query_4_graph_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -749,7 +748,6 @@ services:
       - NODE_NAME=query_4_graph_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -775,7 +773,6 @@ services:
       - NODE_NAME=query_4_graph_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -798,7 +795,6 @@ services:
       - NODE_NAME=query_4_scatter_detector_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -821,7 +817,6 @@ services:
       - NODE_NAME=query_4_scatter_detector_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -844,7 +839,6 @@ services:
       - NODE_NAME=query_4_scatter_detector_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -866,7 +860,6 @@ services:
       - NODE_NAME=query_4_agg
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -888,7 +881,6 @@ services:
       - NODE_NAME=usd_converter_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -910,7 +902,6 @@ services:
       - NODE_NAME=usd_converter_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -932,7 +923,6 @@ services:
       - NODE_NAME=usd_converter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -954,7 +944,6 @@ services:
       - NODE_NAME=query_5_aggregator
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal

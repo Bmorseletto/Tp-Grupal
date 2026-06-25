@@ -120,6 +120,7 @@ class AggregatorQ5:
             heartbeat.stop()
 
     def close(self):
+        self.wal.close()
         self.input_queue.close()
         self.output_queue.close()
 
