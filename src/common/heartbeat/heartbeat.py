@@ -15,8 +15,12 @@ class Heartbeat:
         self.heartbeat_thread = None
         self.beat = False
         self.stop_event = threading.Event()
+        self.beat = True
+        self.heartbeat_thread = threading.Thread(target=self._heartbeat, daemon=True)
+        self.heartbeat_thread.start()
 
     def start(self):
+            pass
             self.beat = True
             self.heartbeat_thread = threading.Thread(target=self._heartbeat, daemon=True)
             self.heartbeat_thread.start()
