@@ -3,6 +3,7 @@ import logging
 import signal
 
 from common import middleware, message_protocol, heartbeat
+from common.wal import WAL
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -14,7 +15,9 @@ DATE_FILTER_AMOUNT = int(os.environ["DATE_FILTER_AMOUNT"])
 NODO_ID = "nodo_id"
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
-NODE_NAME =  os.environ["NODE_NAME"]
+NODE_NAME = os.environ["NODE_NAME"]
+WAL_DIR = os.environ.get("WAL_DIR", f"/wal/{FILTER_PREFIX}_{ID}")
+
 
 class AvgFilter:
 
@@ -23,7 +26,7 @@ class AvgFilter:
             MOM_HOST, FILTER_PREFIX, [f"{FILTER_PREFIX}", FILTER_PREFIX + f"{ID}"], ID
         )
         self.output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
-            MOM_HOST, OUTPUT_QUEUE
+            MOM_HOST, OUTPUT_QUEUE, source_id=f"{FILTER_PREFIX}_{ID}"
         )
         self.avg_worker_finished_with_client = {}
         self.date_filter_finished_with_client = {}
@@ -32,91 +35,200 @@ class AvgFilter:
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
+        self.wal = WAL(WAL_DIR)
+        state, _, _ = self.wal.backup_load(default=(
+            {"transactions": {}, "averages": {}, "avg_workers": {}, "date_workers": {}, "results_sent": [], "__msg_counters": {}},
+            0, set(),
+        ))
+        self.transactions_per_client = {
+            str(k): {str(pf): txns for pf, txns in pfs.items()}
+            for k, pfs in state["transactions"].items()
+        }
+        state["transactions"] = self.transactions_per_client
+        self.payment_formats_averages = {
+            str(k): {str(pf): avg for pf, avg in avs.items()}
+            for k, avs in state["averages"].items()
+        }
+        state["averages"] = self.payment_formats_averages
+        self.avg_worker_finished_with_client = {str(k): set(v) for k, v in state["avg_workers"].items()}
+        state["avg_workers"] = self.avg_worker_finished_with_client
+        self.date_filter_finished_with_client = {str(k): set(v) for k, v in state["date_workers"].items()}
+        state["date_workers"] = self.date_filter_finished_with_client
+        sent = state.get("results_sent", [])
+        self._results_sent = set(str(c) for c in sent) if sent else set()
+        middleware._init_msg_id_counters(state.get("__msg_counters", {}))
+        self._orphans = self.wal.recover(self._wal_apply, state)
+        for orphan in self._orphans:
+            if orphan.startswith("results_"):
+                cid = orphan[len("results_"):]
+                self._results_sent.add(cid)
+                self.transactions_per_client.pop(cid, None)
+                self.payment_formats_averages.pop(cid, None)
+                self.avg_worker_finished_with_client.pop(cid, None)
+                self.date_filter_finished_with_client.pop(cid, None)
+                self.wal.tx_commit(orphan)
+                self.wal.append(None, {"type": "results_sent", "client_id": cid})
+        for cid in list(self.avg_worker_finished_with_client):
+            self._try_send_results(cid)
 
-    def _process_data(self, data):
-        client_id = data.pop("client_id")
-        payment_format = data.get("payment_format", "")
+    @staticmethod
+    def _wal_apply(entry, state):
+        cid = str(entry["client_id"])
+        if entry["type"] == "transaction_add":
+            pf = str(entry["payment_format"])
+            state["transactions"].setdefault(cid, {}).setdefault(pf, [])
+            state["transactions"][cid][pf].append(entry["transaction"])
+        elif entry["type"] == "avg_eof":
+            state["avg_workers"].setdefault(cid, set()).add(entry["nodo_id"])
+            state["averages"].setdefault(cid, {}).update(entry["avg"])
+        elif entry["type"] == "date_eof":
+            state["date_workers"].setdefault(cid, set()).add(entry["nodo_id"])
+        elif entry["type"] == "results_sent":
+            state["transactions"].pop(cid, None)
+            state["averages"].pop(cid, None)
+            state["avg_workers"].pop(cid, None)
+            state["date_workers"].pop(cid, None)
+
+    def _process_data(self, data, msg_id=None):
+        client_id = str(data.pop("client_id"))
+        payment_format = str(data.get("payment_format", ""))
         if client_id not in self.transactions_per_client:
             self.transactions_per_client[client_id] = {}
         if payment_format not in self.transactions_per_client[client_id]:
             self.transactions_per_client[client_id][payment_format] = []
-        self.transactions_per_client[client_id][payment_format].append({
-            "client_id": client_id,
+        txn = {
+            "client_id": int(client_id),
             "from_bank": data.get("from_bank", ""),
             "account": data.get("account", ""),
             "amount_paid": data.get("amount_paid", 0),
             "payment_format": payment_format,
+        }
+        self.transactions_per_client[client_id][payment_format].append(txn)
+        self.wal.append(msg_id, {
+            "type": "transaction_add",
+            "client_id": client_id,
+            "payment_format": payment_format,
+            "transaction": txn,
         })
 
-    def _process_eof(self, deserialized_message):
-        try:
-            client_id = deserialized_message["client_id"]
-            nodo_id = deserialized_message["nodo_id"]
-            if client_id not in self.avg_worker_finished_with_client:
-                self.avg_worker_finished_with_client[client_id] = set()
-                self.date_filter_finished_with_client[client_id] = set()
-            if "avg" in deserialized_message:
-                self.avg_worker_finished_with_client[client_id].add(nodo_id)
-                self.payment_formats_averages.setdefault(client_id, {}).update(deserialized_message["avg"])
-            else:
-                self.date_filter_finished_with_client[client_id].add(nodo_id)
-            if len(self.date_filter_finished_with_client[client_id]) < DATE_FILTER_AMOUNT or len(self.avg_worker_finished_with_client[client_id]) < AVG_CALC_AMOUNT:
-                return
-            payment_formats_averages = self.payment_formats_averages.get(client_id, {})
-            client_transactions = self.transactions_per_client.get(client_id, {})
-            for payment_format, average in payment_formats_averages.items():
-                avg_threshold = float(average) / 100
-                for transaction in client_transactions.get(payment_format, []):
-                    try:
-                        if float(transaction["amount_paid"]) < avg_threshold:
-                            self.output_queue.send(message_protocol.internal.serialize({"results": transaction}))
-                    except (TypeError, ValueError):
-                        continue
-            self.output_queue.send(message_protocol.internal.serialize({"nodo_id": ID, "client_id": client_id}))
-            self.transactions_per_client.pop(client_id, None)
-            self.payment_formats_averages.pop(client_id, None)
-            self.avg_worker_finished_with_client.pop(client_id, None)
-            self.date_filter_finished_with_client.pop(client_id, None)
-        except Exception as e:
-            logging.warning(f"ERROR: {e}")
+    def _process_eof(self, deserialized_message, msg_id=None):
+        client_id = str(deserialized_message["client_id"])
+        nodo_id = deserialized_message["nodo_id"]
+        if "avg" in deserialized_message:
+            self.avg_worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
+            avg_data = {str(k): v for k, v in deserialized_message["avg"].items()}
+            self.payment_formats_averages.setdefault(client_id, {}).update(avg_data)
+            self.wal.append(msg_id, {
+                "type": "avg_eof",
+                "client_id": client_id,
+                "nodo_id": nodo_id,
+                "avg": avg_data,
+            })
+        else:
+            self.date_filter_finished_with_client.setdefault(client_id, set()).add(nodo_id)
+            self.wal.append(msg_id, {
+                "type": "date_eof",
+                "client_id": client_id,
+                "nodo_id": nodo_id,
+            })
+
+        self._try_send_results(client_id, msg_id)
+
+    def _try_send_results(self, client_id, msg_id=None):
+        if client_id in self._results_sent:
+            return
+        if client_id not in self.avg_worker_finished_with_client:
+            return
+        if len(self.avg_worker_finished_with_client[client_id]) < AVG_CALC_AMOUNT:
+            return
+        if client_id not in self.date_filter_finished_with_client:
+            return
+        if len(self.date_filter_finished_with_client[client_id]) < DATE_FILTER_AMOUNT:
+            return
+        self._send_results(client_id, msg_id)
+
+    def _send_results(self, client_id, msg_id=None):
+        payment_formats_averages = self.payment_formats_averages.get(client_id, {})
+        client_transactions = self.transactions_per_client.get(client_id, {})
+        self.wal.tx_begin(f"results_{client_id}")
+        for payment_format, average in payment_formats_averages.items():
+            avg_threshold = float(average) / 100
+            for transaction in client_transactions.get(payment_format, []):
+                try:
+                    if float(transaction["amount_paid"]) < avg_threshold:
+                        self.output_queue.send(message_protocol.internal.serialize({"results": transaction}))
+                except (TypeError, ValueError):
+                    continue
+        self.output_queue.send(message_protocol.internal.serialize({"nodo_id": ID, "client_id": int(client_id)}))
+        self.wal.tx_commit(f"results_{client_id}")
+        self.transactions_per_client.pop(client_id, None)
+        self.payment_formats_averages.pop(client_id, None)
+        self.avg_worker_finished_with_client.pop(client_id, None)
+        self.date_filter_finished_with_client.pop(client_id, None)
+        self._results_sent.add(client_id)
+        self.wal.append(msg_id, {"type": "results_sent", "client_id": client_id})
 
     def process_messsage(self, message, ack, nack, ctx):
+        msg_id = ctx.get("msg_id")
+        if msg_id and msg_id in self.wal.processed_ids:
+            ack()
+            return
         try:
             deserialized_message = message_protocol.internal.deserialize(message)
             if NODO_ID in deserialized_message:
-                self._process_eof(deserialized_message)
+                self._process_eof(deserialized_message, msg_id)
             else:
-                self._process_data(deserialized_message)
-        except Exception as e:
-            logging.warning(f"ERROR: {e}")
-        ack()
+                self._process_data(deserialized_message, msg_id)
+            if msg_id:
+                self.wal.processed_ids.add(msg_id)
+            self.wal.checkpoint({
+                "transactions": self.transactions_per_client,
+                "averages": self.payment_formats_averages,
+                "avg_workers": self.avg_worker_finished_with_client,
+                "date_workers": self.date_filter_finished_with_client,
+                "results_sent": list(self._results_sent),
+                "__msg_counters": middleware.get_msg_id_counters(),
+            })
+            ack()
+        except Exception:
+            logging.exception("error processing message")
+            nack()
 
     def start(self):
         for heartbeat in self.heartbeats:
             heartbeat.start()
         self.input_exchange.start_consuming(self.process_messsage)
-        self.input_exchange.close()
-        self.output_queue.close()
 
     def stop(self):
+        self.wal.backup_save({
+            "transactions": self.transactions_per_client,
+            "averages": self.payment_formats_averages,
+            "avg_workers": self.avg_worker_finished_with_client,
+            "date_workers": self.date_filter_finished_with_client,
+            "results_sent": list(self._results_sent),
+            "__msg_counters": middleware.get_msg_id_counters(),
+        }, self.wal.last_seq())
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
 
     def close(self):
+        self.wal.close()
         self.input_exchange.close()
         self.output_queue.close()
 
+
 def main():
     logging.basicConfig(level=logging.INFO)
-    avg_calculator = AvgFilter()
+    avg_filter = AvgFilter()
     signal.signal(
         signal.SIGTERM,
-        lambda signum, frame: avg_calculator.stop(),
+        lambda signum, frame: avg_filter.stop(),
     )
-    avg_calculator.start()
-    avg_calculator.close()
+    avg_filter.start()
+    avg_filter.close()
     return 0
+
 
 if __name__ == "__main__":
     main()
