@@ -36,26 +36,28 @@ class MaxTransactionFilter:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
         self.wal = WAL(WAL_DIR)
         state, _, _ = self.wal.backup_load(default=({"max": {}, "eof": {}, "__msg_counters": {}}, 0, set()))
-        self.max_transaction_per_bank = state["max"]
-        self.eof_count = state["eof"]
+        self.max_transaction_per_bank = {str(k): {str(b): v for b, v in banks.items()} for k, banks in state["max"].items()}
+        state["max"] = self.max_transaction_per_bank
+        self.eof_count = {str(k): v for k, v in state["eof"].items()}
+        state["eof"] = self.eof_count
         middleware._init_msg_id_counters(state.get("__msg_counters", {}))
         self._orphans = self.wal.recover(self._wal_apply, state)
 
     @staticmethod
     def _wal_apply(entry, state):
+        cid = str(entry["client_id"])
         if entry["type"] == "max_update":
-            cid = entry["client_id"]
-            bid = entry["bank_id"]
+            bid = str(entry["bank_id"])
             state["max"].setdefault(cid, {})[bid] = entry["transaction"]
         elif entry["type"] == "eof_count":
-            state["eof"][entry["client_id"]] = entry["count"]
+            state["eof"][cid] = entry["count"]
         elif entry["type"] == "eof_done":
-            state["eof"].pop(entry["client_id"], None)
-            state["max"].pop(entry["client_id"], None)
+            state["eof"].pop(cid, None)
+            state["max"].pop(cid, None)
 
     def _process_data(self, transaction, msg_id=None):
-        client_id = transaction.pop(CLIENT_ID_KEY)
-        bank_id = transaction[BANK_KEY]
+        client_id = str(transaction.pop(CLIENT_ID_KEY))
+        bank_id = str(transaction[BANK_KEY])
         if client_id not in self.max_transaction_per_bank:
             self.max_transaction_per_bank[client_id] = {}
         if bank_id in self.max_transaction_per_bank[client_id]:
@@ -65,7 +67,7 @@ class MaxTransactionFilter:
         self.wal.append(msg_id, {"type": "max_update", "client_id": client_id, "bank_id": bank_id, "transaction": transaction})
 
     def _process_eof(self, deserialized_message, msg_id=None):
-        client_id = deserialized_message["client_id"]
+        client_id = str(deserialized_message["client_id"])
         current_count = self.eof_count.get(client_id, 0)
         if current_count >= UPSTREAM_AMOUNT:
             self.eof_count.pop(client_id, None)
@@ -78,7 +80,7 @@ class MaxTransactionFilter:
             return
         results = list(self.max_transaction_per_bank.get(client_id, {}).values())
         if results:
-            self.output_queue.send(message_protocol.internal.serialize({"nodo_id": ID, CLIENT_ID_KEY: client_id, "results": results}))
+            self.output_queue.send(message_protocol.internal.serialize({"nodo_id": ID, CLIENT_ID_KEY: int(client_id), "results": results}))
         self.eof_count.pop(client_id, None)
         self.max_transaction_per_bank.pop(client_id, None)
         self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})

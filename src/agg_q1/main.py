@@ -32,21 +32,33 @@ class JoinFilterQ1:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
         self.wal = WAL(WAL_DIR)
         state, _, _ = self.wal.backup_load(default=({"workers": {}, "__msg_counters": {}}, 0, set()))
-        self.worker_finished_with_client = state["workers"]
+        self.worker_finished_with_client = {str(k): v for k, v in state["workers"].items()}
+        state["workers"] = self.worker_finished_with_client
         middleware._init_msg_id_counters(state.get("__msg_counters", {}))
         self._orphans = self.wal.recover(self._wal_apply, state)
+        for cid in list(self.worker_finished_with_client):
+            if len(self.worker_finished_with_client[cid]) == Q1_FILTER_AMOUNT:
+                self.wal.tx_begin(f"results_{cid}")
+                self.output_queue.send(
+                    message_protocol.internal.serialize([int(cid), "q1"])
+                )
+                self.wal.tx_commit(f"results_{cid}")
+                del self.worker_finished_with_client[cid]
+                self.wal.append(None, {"type": "eof_done", "client_id": cid})
 
     @staticmethod
     def _wal_apply(entry, state):
+        cid = str(entry["client_id"])
         if entry["type"] == "eof_count":
-            state["workers"].setdefault(entry["client_id"], set())
-            state["workers"][entry["client_id"]].add(entry["nodo_id"])
+            state["workers"].setdefault(cid, set())
+            state["workers"][cid].add(entry["nodo_id"])
         elif entry["type"] == "eof_done":
-            state["workers"].pop(entry["client_id"], None)
+            state["workers"].pop(cid, None)
 
     def _process_data(self, transaction: dict, msg_id=None):
         client_id = transaction.pop("client_id")
-        self.worker_finished_with_client.setdefault(client_id, set())
+        cid = str(client_id)
+        self.worker_finished_with_client.setdefault(cid, set())
         self.output_queue.send(
             message_protocol.internal.serialize([client_id, "q1", [{
             "from_bank":transaction.get("from_bank", ""),
@@ -59,30 +71,32 @@ class JoinFilterQ1:
 
     def _process_eof(self, eof_message, msg_id=None):
         client_id = eof_message["client_id"]
+        cid = str(client_id)
         nodo_id = eof_message["nodo_id"]
-        self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
-        self.wal.append(msg_id, {"type": "eof_count", "client_id": client_id, "nodo_id": nodo_id})
-        if len(self.worker_finished_with_client[client_id]) == Q1_FILTER_AMOUNT:
-            self.wal.tx_begin(f"results_{client_id}")
+        self.worker_finished_with_client.setdefault(cid, set()).add(nodo_id)
+        self.wal.append(msg_id, {"type": "eof_count", "client_id": cid, "nodo_id": nodo_id})
+        if len(self.worker_finished_with_client[cid]) == Q1_FILTER_AMOUNT:
+            self.wal.tx_begin(f"results_{cid}")
             self.output_queue.send(
                 message_protocol.internal.serialize([client_id, "q1"])
             )
-            self.wal.tx_commit(f"results_{client_id}")
-            del self.worker_finished_with_client[client_id]
-            self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})
+            self.wal.tx_commit(f"results_{cid}")
+            del self.worker_finished_with_client[cid]
+            self.wal.append(msg_id, {"type": "eof_done", "client_id": cid})
 
     def process_messsage(self, message, ack, nack, ctx):
         msg_id = ctx.get("msg_id")
-        if msg_id and msg_id in self.wal.processed_ids:
+        deserialized_message = message_protocol.internal.deserialize(message)
+        is_eof = len(deserialized_message) == 2
+        if is_eof and msg_id and msg_id in self.wal.processed_ids:
             ack()
             return
         try:
-            deserialized_message = message_protocol.internal.deserialize(message)
-            if len(deserialized_message) == 2:
+            if is_eof:
                 self._process_eof(deserialized_message, msg_id)
             else:
                 self._process_data(deserialized_message, msg_id)
-            if msg_id:
+            if is_eof and msg_id:
                 self.wal.processed_ids.add(msg_id)
             self.wal.checkpoint({"workers": self.worker_finished_with_client, "__msg_counters": middleware.get_msg_id_counters()})
             ack()

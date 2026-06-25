@@ -50,15 +50,13 @@ class JoinFilterQ2:
         middleware._init_msg_id_counters(state.get("__msg_counters", {}))
         self._orphans = self.wal.recover(self._wal_apply, state)
         self.clients_accounts_eof = set(str(c) for c in state["accounts_eof"])
-        logging.info(f"After recovery: workers={self.worker_finished_with_client}, accounts_eof={self.clients_accounts_eof}, results_keys={list(self.results.keys())}, banks_count={len(self.banks)}")
         for cid in list(self.clients_accounts_eof):
-            logging.info(f"Trying to send results for client {cid} after recovery")
             self._try_send_results(cid)
 
     @staticmethod
     def _wal_apply(entry, state):
         if entry["type"] == "transaction_result":
-            cid = entry["client_id"]
+            cid = str(entry["client_id"])
             nid = entry["nodo_id"]
             state["workers"].setdefault(cid, set()).add(nid)
             results_dict = state["results"].setdefault(cid, {})
@@ -67,12 +65,14 @@ class JoinFilterQ2:
         elif entry["type"] == "bank_map":
             state["banks"][str(entry["bank_id"])] = entry["bank_name"]
         elif entry["type"] == "accounts_eof":
-            if entry["client_id"] not in state["accounts_eof"]:
-                state["accounts_eof"].append(entry["client_id"])
+            cid = str(entry["client_id"])
+            if cid not in state["accounts_eof"]:
+                state["accounts_eof"].append(cid)
         elif entry["type"] == "results_sent":
-            state["results"].pop(entry["client_id"], None)
-            state["workers"].pop(entry["client_id"], None)
-            state["accounts_eof"] = [c for c in state["accounts_eof"] if c != entry["client_id"]]
+            cid = str(entry["client_id"])
+            state["results"].pop(cid, None)
+            state["workers"].pop(cid, None)
+            state["accounts_eof"] = [c for c in state["accounts_eof"] if c != cid]
 
     def _all_banks_available(self, client_id):
         for r in self.results.get(client_id, {}).values():
@@ -94,23 +94,24 @@ class JoinFilterQ2:
 
     def _process_transaction(self, transaction_message, msg_id=None):
         client_id = transaction_message["client_id"]
+        cid = str(client_id)
         nodo_id = transaction_message["nodo_id"]
         results = transaction_message["results"]
-        self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
-        logging.info(f"Received transaction results for client {client_id} from nodo {nodo_id}")
-        results_dict = self.results.setdefault(client_id, {})
+        self.worker_finished_with_client.setdefault(cid, set()).add(nodo_id)
+        logging.info(f"Received transaction results for client {cid} from nodo {nodo_id}")
+        results_dict = self.results.setdefault(cid, {})
         for r in results:
             results_dict[str(r["from_bank"])] = r
-        self.wal.append(msg_id, {"type": "transaction_result", "client_id": client_id, "nodo_id": nodo_id, "results": results})
-        self._try_send_results(client_id, msg_id)
+        self.wal.append(msg_id, {"type": "transaction_result", "client_id": cid, "nodo_id": nodo_id, "results": results})
+        self._try_send_results(cid, msg_id)
 
     def _send_results(self, client_id, msg_id=None):
         results = self._relate_bank_id_bank_name(client_id)
         logging.info(f"Sending {len(results)} results to {OUTPUT_QUEUE}")
         self.wal.tx_begin(f"results_{client_id}")
         for result in results:
-            self.output_queue.send(message_protocol.internal.serialize([client_id, "q2", [result]]))
-        self.output_queue.send(message_protocol.internal.serialize([client_id, "q2"]))
+            self.output_queue.send(message_protocol.internal.serialize([int(client_id), "q2", [result]]))
+        self.output_queue.send(message_protocol.internal.serialize([int(client_id), "q2"]))
         self.wal.tx_commit(f"results_{client_id}")
         self.results.pop(client_id, None)
         del self.worker_finished_with_client[client_id]
@@ -153,14 +154,15 @@ class JoinFilterQ2:
             deserialized_message = message_protocol.internal.deserialize(message)
             if isinstance(deserialized_message, list):
                 client_id = deserialized_message[0]
-                self.clients_accounts_eof.add(client_id)
-                self.wal.append(msg_id, {"type": "accounts_eof", "client_id": client_id})
-                self._try_send_results(client_id, msg_id)
+                cid = str(client_id)
+                self.clients_accounts_eof.add(cid)
+                self.wal.append(msg_id, {"type": "accounts_eof", "client_id": cid})
+                self._try_send_results(cid, msg_id)
             else:
-                self.banks[deserialized_message["bank_id"]] = deserialized_message["bank_name"]
-                self.wal.append(msg_id, {"type": "bank_map", "bank_id": deserialized_message["bank_id"], "bank_name": deserialized_message["bank_name"]})
+                self.banks[str(deserialized_message["bank_id"])] = deserialized_message["bank_name"]
+                self.wal.append(msg_id, {"type": "bank_map", "bank_id": str(deserialized_message["bank_id"]), "bank_name": deserialized_message["bank_name"]})
                 for cid in list(self.clients_accounts_eof):
-                    self._try_send_results(cid, msg_id)
+                    self._try_send_results(cid, msg_id)            
             if msg_id:
                 self.wal.processed_ids.add(msg_id)
             self.wal.checkpoint({"results": self.results, "workers": self.worker_finished_with_client, "banks": self.banks, "accounts_eof": list(self.clients_accounts_eof), "__msg_counters": middleware.get_msg_id_counters()})
@@ -192,7 +194,7 @@ class JoinFilterQ2:
 
 def main():
     try:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.INFO)
         join_filter = JoinFilterQ2()
         signal.signal(
             signal.SIGTERM,

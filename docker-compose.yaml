@@ -302,7 +302,6 @@ services:
       - NODE_NAME=query_2_aggregator
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./output:/output
       - ./wal:/wal
@@ -324,7 +323,6 @@ services:
       - NODE_NAME=max_transaction_filter_0
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./wal:/wal
   max_transaction_filter_1:
@@ -345,7 +343,6 @@ services:
       - NODE_NAME=max_transaction_filter_1
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./wal:/wal
   max_transaction_filter_2:
@@ -366,7 +363,6 @@ services:
       - NODE_NAME=max_transaction_filter_2
       - MANAGER_HOSTS=manager_0,manager_1,manager_2
       - MANAGER_PORT=5679
-      - WAL_DIR=/wal
     volumes:
       - ./wal:/wal
   query_3_aggregator:
