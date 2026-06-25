@@ -22,49 +22,49 @@ services:
     - ./datasets:/datasets
     - ./output:/output
   client_1:
-  build:
-  context: ./src/
-  dockerfile: client/Dockerfile
-  container_name: client_1
-  depends_on:
-  - currency_filter_0
-  - currency_filter_1
-  - currency_filter_2
-  - query_5_date_filter_0
-  - query_5_date_filter_1
-  - query_5_date_filter_2
-  environment:
-  - TRANSACTIONS_INPUT_FILE=/datasets/input_1.csv
-  - ACCOUNTS_INPUT_FILE=/datasets/accounts_1.csv
-  - OUTPUT_FILE=/output/output_1.csv
-  - PYTHONUNBUFFERED=1
-  - SERVER_HOST=gateway
-  - SERVER_PORT=5678
-  volumes:
-  - ./datasets:/datasets
-  - ./output:/output
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_1
+    depends_on:
+      - currency_filter_0
+      - currency_filter_1
+      - currency_filter_2
+      - query_5_date_filter_0
+      - query_5_date_filter_1
+      - query_5_date_filter_2
+    environment:
+      - TRANSACTIONS_INPUT_FILE=/datasets/input_1.csv
+      - ACCOUNTS_INPUT_FILE=/datasets/accounts_1.csv
+      - OUTPUT_FILE=/output/output_1.csv
+      - PYTHONUNBUFFERED=1
+      - SERVER_HOST=gateway
+      - SERVER_PORT=5678
+    volumes:
+      - ./datasets:/datasets
+      - ./output:/output
   client_2:
     build:
-    context: ./src/
-    dockerfile: client/Dockerfile
+      context: ./src/
+      dockerfile: client/Dockerfile
     container_name: client_2
     depends_on:
-    - currency_filter_0
-    - currency_filter_1
-    - currency_filter_2
-    - query_5_date_filter_0
-    - query_5_date_filter_1
-    - query_5_date_filter_2
+      - currency_filter_0
+      - currency_filter_1
+      - currency_filter_2
+      - query_5_date_filter_0
+      - query_5_date_filter_1
+      - query_5_date_filter_2
     environment:
-    - TRANSACTIONS_INPUT_FILE=/datasets/input_2.csv
-    - ACCOUNTS_INPUT_FILE=/datasets/accounts_2.csv
-    - OUTPUT_FILE=/output/output_2.csv
-    - PYTHONUNBUFFERED=1
-    - SERVER_HOST=gateway
-    - SERVER_PORT=5678
+      - TRANSACTIONS_INPUT_FILE=/datasets/input_2.csv
+      - ACCOUNTS_INPUT_FILE=/datasets/accounts_2.csv
+      - OUTPUT_FILE=/output/output_2.csv
+      - PYTHONUNBUFFERED=1
+      - SERVER_HOST=gateway
+      - SERVER_PORT=5678
     volumes:
-    - ./datasets:/datasets
-    - ./output:/output
+      - ./datasets:/datasets
+      - ./output:/output
   gateway:
     build:
       context: ./src/
