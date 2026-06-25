@@ -24,8 +24,9 @@ class NodeManagerIntercomm:
         self.voting_status_gate = None
         self.is_leader = None
         self.heartbeat_timer = None
+        self.is_leader_barrier = None
 
-    def start(self, status, status_gate, is_leader,  mom_host):
+    def start(self, status, status_gate, is_leader,  mom_host, is_leader_barrier):
         logging.basicConfig(level=logging.INFO)
         self.exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             host=mom_host,
@@ -37,6 +38,7 @@ class NodeManagerIntercomm:
         self.voting_status = status
         self.voting_status_gate = status_gate
         self.is_leader = is_leader
+        self.is_leader_barrier = is_leader_barrier
 
         if not self.is_leader.value:
             self._resetear_timeout_lider()
@@ -49,8 +51,10 @@ class NodeManagerIntercomm:
             
         self.received_answer = False
         self.voting_status.value = VOTING     
-        self.voting_status_gate.clear()   
+        self.voting_status_gate.clear()
+        self.is_leader_barrier.clear()   
         self.is_leader.value = False
+
         
         bully = False
         msg=message_protocol.internal.serialize({"type": ELECTION, "sender": self.id})
@@ -67,6 +71,7 @@ class NodeManagerIntercomm:
             msg = message_protocol.internal.serialize({"type": COORDINATOR, "leader": self.id})
             self.exchange.send_by_key(msg, key="leader")
             self.is_leader.value = True
+            self.is_leader_barrier.set()   
             self.voting_status.value = WORKING
             self.voting_status_gate.set()
             self._heartbeat()
@@ -77,6 +82,7 @@ class NodeManagerIntercomm:
             msg = message_protocol.internal.serialize({"type": COORDINATOR, "leader": self.id})
             self.exchange.send_by_key(msg, key="leader")
             self.is_leader.value = True
+            self.is_leader_barrier.set()   
             self.voting_status.value = WORKING
             self.voting_status_gate.set()
             self._heartbeat()
@@ -142,7 +148,8 @@ class NodeManagerIntercomm:
             
             if lider_actual != self.id:
                 self._limpiar_timers()
-                    
+
+                self.is_leader_barrier.clear()       
                 self.is_leader.value = False
                 self.voting_status.value = WORKING
                 self.voting_status_gate.set()
