@@ -3,6 +3,7 @@ import logging
 import signal
 
 from common import middleware, message_protocol,heartbeat
+from common.wal import WAL
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
@@ -12,6 +13,8 @@ Q5_FILTER_PREFIX = os.environ["Q5_FILTER_PREFIX"]
 MANAGER_HOSTS = os.environ["MANAGER_HOSTS"].split(",")
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
+ID = int(os.environ.get("ID", "0"))
+WAL_DIR = os.environ.get("WAL_DIR", f"/wal/agg_q5_{ID}")
 
 
 class AggregatorQ5:
@@ -27,17 +30,47 @@ class AggregatorQ5:
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
+        self.wal = WAL(WAL_DIR)
+        default_state = {"workers": {}, "count": {}, "__msg_counters": {}}        
+        loaded_state, _, _ = self.wal.backup_load(default=(default_state, 0, set()))
+        loaded_state, _, _ = self.wal.backup_load(default=(default_state, 0, set()))
+        
+        if not isinstance(loaded_state, dict):
+            state = default_state
+        else:
+            state = loaded_state
+            state.setdefault("workers", {})
+            state.setdefault("count", {})
+            state.setdefault("__msg_counters", {})
+        self.worker_finished_with_client = state["workers"]
+        self.count = state["count"]
+        middleware._init_msg_id_counters(state["__msg_counters"])
+        self._orphans = self.wal.recover(self._wal_apply, state)
 
-    def _process_data(self, transaction: dict):
+    @staticmethod
+    def _wal_apply(entry, state):
+        client_id = entry["client_id"]
+        if entry["type"] == "count":
+            state["count"][client_id] = state["count"].get(client_id, 0) + 1
+        elif entry["type"] == "eof_count":
+            nodo_id = entry["nodo_id"]
+            state["workers"].setdefault(client_id, set()).add(nodo_id)
+        elif entry["type"] == "eof_done":
+            state["workers"].pop(client_id, None)
+            state["count"].pop(client_id, None)
+
+    def _process_data(self, transaction: dict, msg_id):
         client_id = transaction.pop("client_id")
         self.count[client_id] = self.count.get(client_id, 0) + 1
-        logging.debug(f"Processed transaction for client {client_id}. Current count: {self.count[client_id]}")
+        self.wal.append(msg_id, {"type": "count", "client_id": client_id, "count_value":f"{self.count[client_id]}"})
+        logging.info(f"Processed transaction for client {client_id}. Current count: {self.count[client_id]}")
 
-    def _process_eof(self, eof_message):
+    def _process_eof(self, eof_message, msg_id):
         client_id = eof_message["client_id"]
         nodo_id = eof_message["nodo_id"]
         logging.info(f"Processing EOF for client {client_id} and node {nodo_id}")
         self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
+        self.wal.append(msg_id, {"type": "eof_count", "client_id": client_id, "nodo_id": nodo_id})
         if len(self.worker_finished_with_client[client_id]) == Q5_FILTER_AMOUNT:
             count = self.count.pop(client_id, 0)
             self.output_queue.send(
@@ -47,15 +80,34 @@ class AggregatorQ5:
             self.output_queue.send(
                 message_protocol.internal.serialize([client_id, "q5"])
             )
+            self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})
 
     def process_messsage(self, message, ack, nack, ctx):
-        deserialized_message = message_protocol.internal.deserialize(message)
-        logging.debug(f"Received message: {deserialized_message}")
-        if len(deserialized_message) == 2:
-            self._process_eof(deserialized_message)
-        else:
-            self._process_data(deserialized_message)
-        ack()
+        msg_id = ctx.get("msg_id")
+        if msg_id and msg_id in self.wal.processed_ids:
+            ack()
+            return
+        try:
+
+            deserialized_message = message_protocol.internal.deserialize(message)
+            logging.debug(f"Received message: {deserialized_message}")
+            if len(deserialized_message) == 2:
+                self._process_eof(deserialized_message, msg_id)
+            else:
+                self._process_data(deserialized_message, msg_id)
+            if msg_id:
+                    self.wal.processed_ids.add(msg_id)
+            current_state = {
+                    "workers": self.worker_finished_with_client, 
+                    "count": self.count, 
+                    "__msg_counters": middleware.get_msg_id_counters()
+                }
+            self.wal.checkpoint(current_state)
+            
+            ack()
+        except Exception as e:
+            logging.info(f"error: {e}")
+            nack()
 
     def start(self):
         for heartbeat in self.heartbeats:
