@@ -1,10 +1,8 @@
 import os
 import logging
 import signal
-import time
 
 from common import middleware, message_protocol, heartbeat
-from common.client_state_ttl import ClientStateTTL
 from common.wal import WAL
 
 MOM_HOST = os.environ["MOM_HOST"]
@@ -17,6 +15,7 @@ MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME = os.environ["NODE_NAME"]
 ID = int(os.environ.get("ID", "0"))
 WAL_DIR = os.environ.get("WAL_DIR", f"/wal/agg_q3_{ID}")
+
 
 class JoinFilterQ3:
 
@@ -50,7 +49,6 @@ class JoinFilterQ3:
                 self.wal.tx_commit(f"results_{cid}")
                 del self.worker_finished_with_client[cid]
                 self.wal.append(None, {"type": "eof_done", "client_id": cid})
-        self.client_state_ttl = ClientStateTTL()
 
     @staticmethod
     def _wal_apply(entry, state):
@@ -61,44 +59,20 @@ class JoinFilterQ3:
         elif entry["type"] == "eof_done":
             state["workers"].pop(cid, None)
 
-    def _expire_client_state(self, client_id):
-        logging.info(
-            f"Client {client_id} expired after {self.client_state_ttl.ttl_seconds} seconds without updates; dropping state"
-        )
-        self.worker_finished_with_client.pop(client_id, None)
-
-    def _cleanup_expired_clients(self):
-        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
-
-    def _update_last_seen(self, client_id):
-        self.client_state_ttl.update_last_seen(client_id)
-
     def _process_data(self, transaction):
-        try:
-            client_id = transaction.get("client_id")
-            # with open(RESULTS_STORAGE+f"{client_id}.csv", "a") as csvfile:
-            #     csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-            #     csv_writer.writerow(transaction.values())
-            #     logging.info(f"writing {transaction} down")
-            self._cleanup_expired_clients()
-            self._update_last_seen(client_id)
-            self.worker_finished_with_client.setdefault(client_id, set())
-            self.output_queue.send(
-                message_protocol.internal.serialize([client_id, "q3", [{
-                "from_bank":transaction.get("from_bank", ""),
+        client_id = transaction.get("client_id")
+        self.output_queue.send(
+            message_protocol.internal.serialize([client_id, "q3", [{
+                "from_bank": transaction.get("from_bank", ""),
                 "account": transaction.get("account", ""),
                 "amount_paid": transaction.get("amount_paid", ""),
                 "payment_format": transaction.get("payment_format", ""),
             }]])
         )
-        except Exception as e:
-            logging.error(f"ERROR: {e}")
 
     def _process_eof(self, eof_message, msg_id=None):
         client_id = str(eof_message["client_id"])
         nodo_id = eof_message["nodo_id"]
-        self._cleanup_expired_clients()
-        self._update_last_seen(client_id)
         self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
         self.wal.append(msg_id, {"type": "eof_count", "client_id": client_id, "nodo_id": nodo_id})
         if len(self.worker_finished_with_client[client_id]) == Q3_FILTER_AMOUNT:
@@ -106,7 +80,6 @@ class JoinFilterQ3:
             self.output_queue.send(message_protocol.internal.serialize([int(client_id), "q3"]))
             self.wal.tx_commit(f"results_{client_id}")
             del self.worker_finished_with_client[client_id]
-            self.client_state_ttl.remove(client_id)
             self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})
             logging.info(f"finished processing EOF of {client_id} sent results to join")
 
@@ -140,7 +113,6 @@ class JoinFilterQ3:
         self.input_queue.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-        self.client_state_ttl.clear()
 
     def close(self):
         self.wal.close()

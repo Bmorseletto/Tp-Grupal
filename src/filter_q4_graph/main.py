@@ -1,13 +1,11 @@
 import os
 import logging
 import signal
-import time
 import zlib
 from collections import defaultdict
 
 from common import middleware, message_protocol, heartbeat
 from common.wal import WAL
-from common.client_state_ttl import ClientStateTTL
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -42,7 +40,6 @@ class GraphFilter:
         self.eof_count = {}
         self.origin_groups = {}
         self.destination_groups = {}
-        self.client_state_ttl = ClientStateTTL()
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
@@ -69,19 +66,6 @@ class GraphFilter:
         self._orphans = self.wal.recover(self._wal_apply, state)
         for cid in list(self.eof_count):
             self._try_send(cid)
-    
-    def _cleanup_expired_clients(self):
-        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
-
-    def _update_last_seen(self, client_id):
-        self.client_state_ttl.update_last_seen(client_id)
-
-    def _expire_client_state(self, client_id):
-        logging.info(
-            f"Client {client_id} expired after {self.client_state_ttl.ttl_seconds} seconds without updates; dropping state"
-        )
-        self.results.pop(client_id, None)
-        self.worker_finished_with_client.pop(client_id, None)
 
     @staticmethod
     def _wal_apply(entry, state):
@@ -144,8 +128,7 @@ class GraphFilter:
         client_id = str(transaction.get("client_id"))
         if client_id == "None":
             return
-        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
-        self.client_state_ttl.update_last_seen(client_id)
+
         origin_account = transaction.get("account")
         origin_bank = transaction.get("from_bank")
         destination_account = transaction.get("to_account")
@@ -188,8 +171,7 @@ class GraphFilter:
         client_id = str(deserialized_message.get("client_id"))
         if client_id == "None":
             return
-        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
-        self.client_state_ttl.update_last_seen(client_id)
+
         current_count = self.eof_count.get(client_id, 0)
         if current_count >= FILTER_DATE_AMOUNT:
             return
@@ -261,7 +243,6 @@ class GraphFilter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-        self.client_state_ttl.clear()
 
     def close(self):
         self.wal.close()

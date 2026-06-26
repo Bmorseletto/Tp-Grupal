@@ -1,10 +1,8 @@
 import os
 import logging
 import signal
-import time
 
 from common import middleware, message_protocol,heartbeat
-from common.client_state_ttl import ClientStateTTL
 from common.wal import WAL
 
 MOM_HOST = os.environ["MOM_HOST"]
@@ -17,6 +15,7 @@ MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 NODE_NAME =  os.environ["NODE_NAME"]
 ID = int(os.environ.get("ID", "0"))
 WAL_DIR = os.environ.get("WAL_DIR", f"/wal/agg_q5_{ID}")
+
 
 class AggregatorQ5:
     def __init__(self):
@@ -36,7 +35,6 @@ class AggregatorQ5:
         loaded_state, _, _ = self.wal.backup_load(default=(default_state, 0, set()))
         loaded_state, _, _ = self.wal.backup_load(default=(default_state, 0, set()))
         
-        
         if not isinstance(loaded_state, dict):
             state = default_state
         else:
@@ -48,7 +46,6 @@ class AggregatorQ5:
         self.count = state["count"]
         middleware._init_msg_id_counters(state["__msg_counters"])
         self._orphans = self.wal.recover(self._wal_apply, state)
-        self.client_state_ttl = ClientStateTTL()
 
     @staticmethod
     def _wal_apply(entry, state):
@@ -62,23 +59,8 @@ class AggregatorQ5:
             state["workers"].pop(client_id, None)
             state["count"].pop(client_id, None)
 
-    def _expire_client_state(self, client_id):
-        logging.info(
-            f"Client {client_id} expired after {self.client_state_ttl.ttl_seconds} seconds without updates; dropping state"
-        )
-        self.count.pop(client_id, None)
-        self.worker_finished_with_client.pop(client_id, None)
-
-    def _cleanup_expired_clients(self):
-        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
-
-    def _update_last_seen(self, client_id):
-        self.client_state_ttl.update_last_seen(client_id)
-
     def _process_data(self, transaction: dict, msg_id):
         client_id = transaction.pop("client_id")
-        self._cleanup_expired_clients()
-        self._update_last_seen(client_id)
         self.count[client_id] = self.count.get(client_id, 0) + 1
         self.wal.append(msg_id, {"type": "count", "client_id": client_id, "count_value":f"{self.count[client_id]}"})
         logging.info(f"Processed transaction for client {client_id}. Current count: {self.count[client_id]}")
@@ -87,8 +69,6 @@ class AggregatorQ5:
         client_id = eof_message["client_id"]
         nodo_id = eof_message["nodo_id"]
         logging.info(f"Processing EOF for client {client_id} and node {nodo_id}")
-        self._cleanup_expired_clients()
-        self._update_last_seen(client_id)
         self.worker_finished_with_client.setdefault(client_id, set()).add(nodo_id)
         self.wal.append(msg_id, {"type": "eof_count", "client_id": client_id, "nodo_id": nodo_id})
         if len(self.worker_finished_with_client[client_id]) == Q5_FILTER_AMOUNT:
@@ -97,7 +77,6 @@ class AggregatorQ5:
                 message_protocol.internal.serialize([client_id, "q5", [{"count": count}]])
             )
             del self.worker_finished_with_client[client_id]
-            self.client_state_ttl.remove(client_id)
             self.output_queue.send(
                 message_protocol.internal.serialize([client_id, "q5"])
             )
@@ -139,7 +118,6 @@ class AggregatorQ5:
         self.input_queue.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-        self.client_state_ttl.clear()
 
     def close(self):
         self.wal.close()

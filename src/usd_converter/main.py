@@ -1,13 +1,11 @@
 import os
 import logging
 import signal
-import time
 import requests
 import json
 from datetime import datetime
 from common import middleware, message_protocol, heartbeat
 from common.wal import WAL
-from common.client_state_ttl import ClientStateTTL
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -54,8 +52,6 @@ class USDConverter:
         )
         self.conversion_rates = {}
         self._fetch_conversion_rates()
-        self.eof_count = {}
-        self.client_state_ttl = ClientStateTTL()
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
@@ -128,9 +124,6 @@ class USDConverter:
         return amount / rate
 
     def _process_data(self, transaction, msg_id=None):
-        client_id = transaction.get("client_id")
-        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
-        self.client_state_ttl.update_last_seen(client_id)
         amount = transaction.get("amount_paid")
         currency = transaction.get("payment_currency")
         date = str(datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M").date())
@@ -154,8 +147,6 @@ class USDConverter:
     def _process_eof(self, deserialized_message, msg_id=None):
         client_id = deserialized_message["client_id"]
         nodo_id = deserialized_message["nodo_id"]
-        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
-        self.client_state_ttl.update_last_seen(client_id)
         self.eof_count[client_id] = self.eof_count.get(client_id, 0) + 1
         self.wal.append(msg_id, {"type": "eof_count", "client_id": client_id, "count": self.eof_count[client_id]})
         if self.eof_count[client_id] < UPSTREAM_AMOUNT:
@@ -167,10 +158,7 @@ class USDConverter:
         )
         self.eof_count.pop(client_id, None)
         self.wal.append(msg_id, {"type": "eof_done", "client_id": client_id})
-        self.client_state_ttl.remove(client_id)
 
-    def _expire_client_state(self, client_id):
-        self.eof_count.pop(client_id, None)
 
     def process_messsage(self, message, ack, nack, ctx):
         msg_id = ctx.get("msg_id")
@@ -205,7 +193,6 @@ class USDConverter:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-        self.client_state_ttl.clear()
 
     def close(self):
         self.wal.close()

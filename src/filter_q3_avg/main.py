@@ -1,11 +1,9 @@
 import os
 import logging
 import signal
-import time
 
 from common import middleware, message_protocol, heartbeat
 from common.wal import WAL
-from common.client_state_ttl import ClientStateTTL
 
 ID = int(os.environ["ID"])
 MOM_HOST = os.environ["MOM_HOST"]
@@ -32,7 +30,6 @@ class AvgCalculator:
         )
         self.transactions_per_payment_format = {}
         self.eof_count = {}
-        self.client_state_ttl = ClientStateTTL()
         self.heartbeats = []
         for manager_host in MANAGER_HOSTS:
             self.heartbeats.append(heartbeat.Heartbeat(NODE_NAME, manager_host, MANAGER_PORT))
@@ -78,18 +75,10 @@ class AvgCalculator:
             OUTPUT_PREFIX,
         )
         self.wal.tx_commit(f"avg_{client_id}")
-        self.eof_count.pop(client_id, None)
-        self.client_state_ttl.remove(client_id)
-
-    def _expire_client_state(self, client_id):
-        self.eof_count.pop(client_id, None)
-        self.transactions_per_payment_format.pop(client_id, None)
 
     def _process_data(self, transaction, msg_id=None):
         payment_format = str(transaction["payment_format"])
         client_id = str(transaction["client_id"])
-        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
-        self.client_state_ttl.update_last_seen(client_id)
         if client_id not in self.transactions_per_payment_format:
             self.transactions_per_payment_format[client_id] = {}
         if payment_format not in self.transactions_per_payment_format[client_id]:
@@ -107,8 +96,6 @@ class AvgCalculator:
 
     def _process_eof(self, deserialized_message, msg_id=None):
         client_id = str(deserialized_message["client_id"])
-        self.client_state_ttl.cleanup_expired_clients(self._expire_client_state)
-        self.client_state_ttl.update_last_seen(client_id)
         current_count = self.eof_count.get(client_id, 0)
         if current_count >= UPSTREAM_AMOUNT:
             return
@@ -155,7 +142,6 @@ class AvgCalculator:
         self.input_exchange.stop_consuming()
         for heartbeat in self.heartbeats:
             heartbeat.stop()
-        self.client_state_ttl.clear()
 
     def close(self):
         self.wal.close()
