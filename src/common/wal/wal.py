@@ -44,7 +44,7 @@ def _loads(s):
 
 
 class WAL:
-    """Write-Ahead Log for crash recovery in stateful services.
+    r"""Write-Ahead Log for crash recovery in stateful services.
 
     Design
     ------
@@ -120,16 +120,17 @@ class WAL:
         self._cleanup_interval_seconds = int(os.environ.get("ORPHAN_TX_CLEANUP_INTERVAL_SECONDS", str(ORPHAN_CLEANUP_INTERVAL_SECONDS)))
         self._cleanup_stop = threading.Event()
         self._init_log()
+        self.logs = []
         self._cleanup_thread = threading.Thread(target=self._orphan_cleanup_loop, daemon=True)
         self._cleanup_thread.start()
 
     def _init_log(self):
         if os.path.exists(self._log_path):
-            with open(self._log_path, "r") as f:
+            with open(self._log_path, "rb") as f:
                 for line in f:
-                    line = line.rstrip("\n")
+                    line = line.rstrip(b"\n")
                     if line:
-                        parts = line.split("\t", 1)
+                        parts = line.split(b"\t", 1)
                         if parts and parts[0].strip():
                             try:
                                 seq = int(parts[0])
@@ -137,7 +138,7 @@ class WAL:
                                 continue
                             if seq > self._last_seq:
                                 self._last_seq = seq
-        self._log_fd = open(self._log_path, "a")
+        self._log_fd = open(self._log_path, "ab")
 
     def append(self, msg_id, record):
         """Append a log entry atomically.  *record* must be JSON-serializable.
@@ -151,7 +152,7 @@ class WAL:
         with self._lock:
             self._last_seq += 1
             seq = self._last_seq
-            line = f"{seq}\t{msg_id}\t{entry}\n"
+            line = f"{seq}\t{msg_id}\t{entry}\n".encode('utf-8')
             self._log_fd.write(line)
             self._log_fd.flush()
             os.fsync(self._log_fd.fileno())
@@ -165,12 +166,12 @@ class WAL:
         """Yield ``(seq, msg_id, record)`` for every entry whose seq >
         *after_seq*.  Used during recovery to replay missed entries.
         """
-        with open(self._log_path, "r") as f:
+        with open(self._log_path, "rb") as f:
             for line in f:
-                line = line.rstrip("\n")
+                line = line.rstrip(b"\n")
                 if not line:
                     continue
-                parts = line.split("\t", 2)
+                parts = line.split(b"\t", 2)
                 if len(parts) != 3:
                     continue
                 try:
@@ -179,7 +180,7 @@ class WAL:
                     continue
                 if seq <= after_seq:
                     continue
-                msg_id = parts[1]
+                msg_id = parts[1].decode('utf-8')
                 try:
                     record = _loads(parts[2])
                 except Exception:
@@ -189,13 +190,13 @@ class WAL:
 
     def truncate(self, up_to_seq):
         try:
-            with open(self._log_path, "r") as f:
+            with open(self._log_path, "rb") as f:
                 lines = f.readlines()
         except FileNotFoundError:
             return
         kept = []
         for l in lines:
-            parts = l.split("\t", 1)
+            parts = l.split(b"\t", 1)
             if not parts or not parts[0].strip():
                 continue
             try:
@@ -207,9 +208,9 @@ class WAL:
         if self._log_fd and not self._log_fd.closed:
             self._log_fd.flush()
             self._log_fd.close()
-        with open(self._log_path, "w") as f:
+        with open(self._log_path, "wb") as f:
             f.writelines(kept)
-        self._log_fd = open(self._log_path, "a")
+        self._log_fd = open(self._log_path, "ab")
         logger.debug("truncated log up to seq %d (%d entries kept)",
                      up_to_seq, len(kept))
 
@@ -413,4 +414,4 @@ class WAL:
             os.makedirs(self._tx_dir, exist_ok=True)
         self._last_seq = 0
         self.processed_ids = set()
-        self._log_fd = open(self._log_path, "a")
+        self._log_fd = open(self._log_path, "ab")
