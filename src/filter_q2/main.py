@@ -42,6 +42,15 @@ class MaxTransactionFilter:
         state["eof"] = self.eof_count
         middleware._init_msg_id_counters(state.get("__msg_counters", {}))
         self._orphans = self.wal.recover(self._wal_apply, state)
+        self.eof_count =  state["eof"] 
+        self.max_transaction_per_bank  = state["max"] 
+        for cid in list(state["eof"]):
+            if state["eof"][cid] < UPSTREAM_AMOUNT:
+                continue
+            results = list(state["max"].get(cid, {}).values())
+            if results:
+                self.output_queue.send(message_protocol.internal.serialize({"nodo_id": ID, CLIENT_ID_KEY: int(cid), "results": state["max"]}))
+            self.wal.append("recover", {"type": "eof_done", "client_id": cid})
 
     @staticmethod
     def _wal_apply(entry, state):

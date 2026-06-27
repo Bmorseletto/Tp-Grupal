@@ -160,6 +160,8 @@ class CurrencyFilter:
     def process_messsage(self, message, ack, nack, ctx):
         msg_id = ctx.get("msg_id")
         if msg_id and msg_id in self.wal.processed_ids:
+            if self.wal.is_checkpoint_necessary():  
+                self.wal.checkpoint({"eof": self.eof_count, "__msg_counters": middleware.get_msg_id_counters()})
             ack()
             return
         try:

@@ -52,6 +52,10 @@ class JoinFilterQ2:
         self.clients_accounts_eof = set(str(c) for c in state["accounts_eof"])
         for cid in list(self.clients_accounts_eof):
             self._try_send_results(cid)
+        self.banks = state["banks"] 
+        self.results = state["results"]
+        self.worker_finished_with_client =  state["banks"]
+        self.clients_accounts_eof = set(state["accounts_eof"]) 
 
     @staticmethod
     def _wal_apply(entry, state):
@@ -108,11 +112,11 @@ class JoinFilterQ2:
     def _send_results(self, client_id, msg_id=None):
         results = self._relate_bank_id_bank_name(client_id)
         logging.info(f"Sending {len(results)} results to {OUTPUT_QUEUE}")
-        self.wal.tx_begin(f"results_{client_id}")
+        #self.wal.tx_begin(f"results_{client_id}")
         for result in results:
             self.output_queue.send(message_protocol.internal.serialize([int(client_id), "q2", [result]]))
         self.output_queue.send(message_protocol.internal.serialize([int(client_id), "q2"]))
-        self.wal.tx_commit(f"results_{client_id}")
+        #self.wal.tx_commit(f"results_{client_id}")
         self.results.pop(client_id, None)
         del self.worker_finished_with_client[client_id]
         self.clients_accounts_eof.discard(client_id)
