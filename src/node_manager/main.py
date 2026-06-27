@@ -18,6 +18,24 @@ MANAGER_HOST = os.environ["MANAGER_HOST"]
 MANAGER_PORT = int(os.environ["MANAGER_PORT"])
 SOCKET_TIMEOUT = 6
 ID = int(os.environ["ID"])
+NODES = [
+    "currency_filter_0", "currency_filter_1", "currency_filter_2",
+    "dollar_amount_filter_0", "dollar_amount_filter_1", "dollar_amount_filter_2",
+    "query_1_aggregator",
+    "query_2_aggregator",
+    "max_transaction_filter_0", "max_transaction_filter_1", "max_transaction_filter_2",
+    "query_3_aggregator",
+    "query_3_avg_filter_0", "query_3_avg_filter_1", "query_3_avg_filter_2",
+    "query_3_avg_calc_0", "query_3_avg_calc_1", "query_3_avg_calc_2",
+    "query_3_date_filter_0", "query_3_date_filter_1", "query_3_date_filter_2",
+    "date_filter_0", "date_filter_1", "date_filter_2",
+    "query_4_graph_0", "query_4_graph_1", "query_4_graph_2",
+    "query_4_scatter_detector_0", "query_4_scatter_detector_1", "query_4_scatter_detector_2",
+    "query_4_agg",
+    "usd_converter_0", "usd_converter_1", "usd_converter_2",
+    "query_5_aggregator",
+    "query_5_date_filter_0", "query_5_date_filter_1", "query_5_date_filter_2",
+]
    
 
 class NodeManager:
@@ -32,6 +50,8 @@ class NodeManager:
             status_gate = manager.Event()
             status_gate.set()
             down_containers = manager.list()
+            for i in NODES:
+                down_containers.append(i)
             lock = manager.Lock()
             intercomm = NodeManagerIntercomm(ID)
             intercomm_process = multiprocessing.Process(
