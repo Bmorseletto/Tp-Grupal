@@ -53,14 +53,20 @@ class DateFilter:
         state["eof"] = self.eof_count
         middleware._init_msg_id_counters(state.get("__msg_counters", {}))
         self._orphans = self.wal.recover(self._wal_apply, state)
-        for cid in list(self.eof_count):
+        logging.info(f"eof: {list(state["eof"])}")
+        logging.info(f"eof: {(state["eof"])}")
+        for cid in list(state["eof"]):
             self._try_send_eof(cid)
+        self.eof_count = state["eof"] 
+            
 
     @staticmethod
     def _wal_apply(entry, state):
         cid = str(entry["client_id"])
         if entry["type"] == "eof_count":
             state["eof"][cid] = entry["count"]
+        elif entry["type"] == "eof_done":
+            state["eof"].pop(entry["client_id"], None)
 
     def _process_data(self, transaction):
         transaction_timestamp = datetime.strptime(transaction["timestamp"], "%Y/%m/%d %H:%M").replace(hour=0, minute=0, second=0, microsecond=0)
@@ -102,6 +108,7 @@ class DateFilter:
                 ),
                 self.outputs_prefix[i],
             )
+        self.wal.append("recover_1", {"type": "eof_done", "client_id": client_id})
 
     def _process_eof(self, deserialized_message, msg_id=None):
         client_id = str(deserialized_message["client_id"])
@@ -126,7 +133,7 @@ class DateFilter:
                 self._process_eof(deserialized_message, msg_id)
             else:
                 self._process_data(deserialized_message)
-            if is_eof and msg_id:
+            if msg_id:
                 self.wal.processed_ids.add(msg_id)
             if self.wal.is_checkpoint_necessary():
                 self.wal.checkpoint({"eof": self.eof_count, "__msg_counters": middleware.get_msg_id_counters()})

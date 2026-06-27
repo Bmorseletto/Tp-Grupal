@@ -70,6 +70,9 @@ class ScatterGatherDetector:
                 self.wal.tx_commit(orphan)
         for cid in list(self.eof_count):
             self._try_send(cid)
+        self.eof_count=state["eof"]
+        self.accounts =state["accounts"] 
+        self.suspicious_accounts=state["suspicious_accounts"] 
 
     @staticmethod
     def _wal_apply(entry, state):
@@ -86,6 +89,10 @@ class ScatterGatherDetector:
             
         elif entry["type"] == "eof_count":
             state["eof"][client_id] = entry["count"]
+        elif entry["type"] == "eof_done":
+            state["eof"].pop(entry["client_id"], None)
+            state["suspicious_accounts"].pop(entry["client_id"], None)
+            state["destination_account"].pop(entry["client_id"], None)
 
     def _try_send(self, client_id):
         if self.eof_count.get(client_id, 0) < Q4_GRAPH_AMOUNT:
@@ -105,6 +112,7 @@ class ScatterGatherDetector:
         self.output_queue.send(message_protocol.internal.serialize({"client_id": int(client_id), "suspicious_accounts": final_dict}))
         self.output_queue.send(message_protocol.internal.serialize({"nodo_id": ID, "client_id": int(client_id)}))
         self.wal.tx_commit(f"results_{client_id}")
+        self.wal.append("recover_1", {"type": "eof_done", "client_id": client_id})
 
     def _process_eof(self, message, msg_id):
         client_id = str(message.get("client_id"))

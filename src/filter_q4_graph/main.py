@@ -66,6 +66,9 @@ class GraphFilter:
         self._orphans = self.wal.recover(self._wal_apply, state)
         for cid in list(self.eof_count):
             self._try_send(cid)
+        self.eof_count = state["eof"]
+        self.origin_groups = state["origin"] 
+        self.destination_groups = state["destination"]
 
     @staticmethod
     def _wal_apply(entry, state):
@@ -96,6 +99,11 @@ class GraphFilter:
 
         elif entry["type"] == "eof_count":
             state["eof"][client_id] = entry["count"]
+        elif entry["type"] == "eof_done":
+            state["eof"].pop(entry["client_id"], None)
+            state["origin"].pop(entry["client_id"], None)
+            state["destination"].pop(entry["client_id"], None)
+
 
     def _try_send(self, client_id):
         if self.eof_count.get(client_id, 0) < FILTER_DATE_AMOUNT:
@@ -123,6 +131,7 @@ class GraphFilter:
             ),
             OUTPUT_PREFIX,
         )
+        self.wal.append("recover_1", {"type": "eof_done", "client_id": client_id})
 
     def _process_data(self, transaction, msg_id):
         client_id = str(transaction.get("client_id"))

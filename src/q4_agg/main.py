@@ -52,16 +52,11 @@ class AggregatorQ4:
             middleware._init_msg_id_counters(state["__msg_counters"])
             
         self._orphans = self.wal.recover(self._wal_apply, state)
-        for orphan in self._orphans:
-            if orphan.startswith("results_"):
-                cid = orphan[len("results_"):]
-                self.worker_finished_with_client.pop(cid, None)
-                self.results.pop(cid, None)
-                self.wal.tx_commit(orphan)
-                self.wal.append(None, {"type": "eof_done", "client_id": cid})
-        for cid in list(self.worker_finished_with_client):
-            if len(self.worker_finished_with_client[cid]) == Q4_SCATTER_AMOUNT:
+        for cid in list( state["workers"]):
+            if len( state["workers"][cid]) == Q4_SCATTER_AMOUNT:
                 self._send_results(cid)
+        self.results = state["results"]
+        self.worker_finished_with_client = state["workers"]
 
     @staticmethod
     def _wal_apply(entry, state):
