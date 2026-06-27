@@ -148,7 +148,8 @@ class AggregatorQ4:
                     "results": self.results, 
                     "__msg_counters": middleware.get_msg_id_counters() if hasattr(middleware, 'get_msg_id_counters') else {}
                 }
-            self.wal.checkpoint(current_state)
+            if self.wal.is_checkpoint_necessary():
+                self.wal.checkpoint(current_state)
             ack()
         except Exception as e:
             logging.error(f"error: {e}")

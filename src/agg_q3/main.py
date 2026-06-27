@@ -97,7 +97,8 @@ class JoinFilterQ3:
                 self._process_data(deserialized_message["results"])
             if is_eof and msg_id:
                 self.wal.processed_ids.add(msg_id)
-            self.wal.checkpoint({"workers": self.worker_finished_with_client, "__msg_counters": middleware.get_msg_id_counters()})
+            if self.wal.is_checkpoint_necessary():
+                self.wal.checkpoint({"workers": self.worker_finished_with_client, "__msg_counters": middleware.get_msg_id_counters()})
             ack()
         except Exception:
             logging.exception("error processing message")

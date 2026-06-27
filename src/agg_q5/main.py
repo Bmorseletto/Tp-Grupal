@@ -33,8 +33,6 @@ class AggregatorQ5:
         self.wal = WAL(WAL_DIR)
         default_state = {"workers": {}, "count": {}, "__msg_counters": {}}        
         loaded_state, _, _ = self.wal.backup_load(default=(default_state, 0, set()))
-        loaded_state, _, _ = self.wal.backup_load(default=(default_state, 0, set()))
-        
         if not isinstance(loaded_state, dict):
             state = default_state
         else:
@@ -102,8 +100,8 @@ class AggregatorQ5:
                     "count": self.count, 
                     "__msg_counters": middleware.get_msg_id_counters()
                 }
-            self.wal.checkpoint(current_state)
-            
+            if self.wal.is_checkpoint_necessary():
+                self.wal.checkpoint(current_state)
             ack()
         except Exception as e:
             logging.info(f"error: {e}")

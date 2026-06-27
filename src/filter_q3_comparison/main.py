@@ -59,8 +59,8 @@ class AvgFilter:
         for orphan in self._orphans:
             if orphan.startswith("results_"):
                 self.wal.tx_commit(orphan)
-        for cid in list(self.avg_worker_finished_with_client):
-            self._try_send_results(cid)
+        #for cid in list(self.avg_worker_finished_with_client):
+        #    self._try_send_results(cid)
 
     @staticmethod
     def _wal_apply(entry, state):
@@ -159,13 +159,14 @@ class AvgFilter:
                 self._process_data(deserialized_message, msg_id)
             if msg_id:
                 self.wal.processed_ids.add(msg_id)
-            self.wal.checkpoint({
-                "transactions": self.transactions_per_client,
-                "averages": self.payment_formats_averages,
-                "avg_workers": self.avg_worker_finished_with_client,
-                "date_workers": self.date_filter_finished_with_client,
-                "__msg_counters": middleware.get_msg_id_counters(),
-            })
+            if self.wal.is_checkpoint_necessary():
+                self.wal.checkpoint({
+                    "transactions": self.transactions_per_client,
+                    "averages": self.payment_formats_averages,
+                    "avg_workers": self.avg_worker_finished_with_client,
+                    "date_workers": self.date_filter_finished_with_client,
+                    "__msg_counters": middleware.get_msg_id_counters(),
+                })
             ack()
         except Exception:
             logging.exception("error processing message")

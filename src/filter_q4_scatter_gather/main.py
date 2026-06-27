@@ -159,7 +159,8 @@ class ScatterGatherDetector:
                     "eof": self.eof_count,
                     "__msg_counters": middleware.get_msg_id_counters()
                 }
-            self.wal.checkpoint(current_state)
+            if self.wal.is_checkpoint_necessary():
+                self.wal.checkpoint(current_state)
             ack()
         except Exception:
             logging.exception("Error processing message")

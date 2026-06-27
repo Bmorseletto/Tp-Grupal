@@ -165,7 +165,8 @@ class JoinFilterQ2:
                     self._try_send_results(cid, msg_id)            
             if msg_id:
                 self.wal.processed_ids.add(msg_id)
-            self.wal.checkpoint({"results": self.results, "workers": self.worker_finished_with_client, "banks": self.banks, "accounts_eof": list(self.clients_accounts_eof), "__msg_counters": middleware.get_msg_id_counters()})
+            if self.wal.is_checkpoint_necessary():
+                self.wal.checkpoint({"results": self.results, "workers": self.worker_finished_with_client, "banks": self.banks, "accounts_eof": list(self.clients_accounts_eof), "__msg_counters": middleware.get_msg_id_counters()})
             ack()
         except Exception:
             logging.exception("An error occurred while processing an accounts message")

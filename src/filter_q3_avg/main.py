@@ -118,11 +118,12 @@ class AvgCalculator:
                 self._process_data(deserialized_message, msg_id)
             if msg_id:
                 self.wal.processed_ids.add(msg_id)
-            self.wal.checkpoint({
-                "data": self.transactions_per_payment_format,
-                "eof": self.eof_count,
-                "__msg_counters": middleware.get_msg_id_counters(),
-            })
+            if self.wal.is_checkpoint_necessary():
+                self.wal.checkpoint({
+                    "data": self.transactions_per_payment_format,
+                    "eof": self.eof_count,
+                    "__msg_counters": middleware.get_msg_id_counters(),
+                })
             ack()
         except Exception:
             logging.exception("error processing message")

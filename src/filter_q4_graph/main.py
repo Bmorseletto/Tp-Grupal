@@ -168,6 +168,7 @@ class GraphFilter:
                 }
 
     def _process_eof(self, deserialized_message, msg_id):
+        logging.info("recived eof count")
         client_id = str(deserialized_message.get("client_id"))
         if client_id == "None":
             return
@@ -219,7 +220,8 @@ class GraphFilter:
                     "destination": self.destination_groups,
                     "__msg_counters": middleware.get_msg_id_counters()
                 }
-            self.wal.checkpoint(current_state)
+            if self.wal.is_checkpoint_necessary():
+                self.wal.checkpoint(current_state)
             ack()
         except Exception:
             logging.exception("Error processing message")

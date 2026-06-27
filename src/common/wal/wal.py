@@ -138,8 +138,8 @@ class WAL:
                                 continue
                             if seq > self._last_seq:
                                 self._last_seq = seq
-        self._log_fd = open(self._log_path, "ab")
-
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_DSYNC
+        self._log_fd = os.open(self._log_path, flags)
     def append(self, msg_id, record):
         """Append a log entry atomically.  *record* must be JSON-serializable.
 
@@ -153,9 +153,10 @@ class WAL:
             self._last_seq += 1
             seq = self._last_seq
             line = f"{seq}\t{msg_id}\t{entry}\n".encode('utf-8')
-            self._log_fd.write(line)
-            self._log_fd.flush()
-            os.fsync(self._log_fd.fileno())
+            #self._log_fd.write(line)
+            #self._log_fd.flush()
+            #os.fsync(self._log_fd.fileno())
+            os.write(self._log_fd, line)
         return seq
 
     def last_seq(self):
@@ -205,20 +206,27 @@ class WAL:
                 continue
             if seq > up_to_seq:
                 kept.append(l)
-        if self._log_fd and not self._log_fd.closed:
-            self._log_fd.flush()
-            self._log_fd.close()
+        try:
+            os.close(self._log_fd)
+        except OSError:
+            # Por si el sistema operativo ya lo había liberado
+            pass
+        self._log_fd = None
         with open(self._log_path, "wb") as f:
             f.writelines(kept)
-        self._log_fd = open(self._log_path, "ab")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_DSYNC
+        self._log_fd = os.open(self._log_path, flags)
         logger.debug("truncated log up to seq %d (%d entries kept)",
                      up_to_seq, len(kept))
 
-    def checkpoint(self, state, interval=500):
-        if self._last_seq % interval == 0:
-            self.backup_save(state, self._last_seq)
-            self.truncate(self._last_seq)
-            self.cleanup_expired_orphan_txs()
+    def checkpoint(self, state):
+        #if self._last_seq % interval == 0:
+        self.backup_save(state, self._last_seq)
+        self.truncate(self._last_seq)
+        self.cleanup_expired_orphan_txs()
+    
+    def is_checkpoint_necessary(self, interval=5):
+        return  self._last_seq % interval == 0 and  self._last_seq > 0
 
     def tx_begin(self, msg_id):
         """Create a transaction file for *msg_id* BEFORE sending downstream.
@@ -392,12 +400,12 @@ class WAL:
         except Exception:
             pass
 
-        if self._log_fd and not self._log_fd.closed:
-            try:
-                self._log_fd.flush()
-                self._log_fd.close()
-            except Exception:
-                pass
+        try:
+            os.close(self._log_fd)
+        except OSError:
+            # Por si el sistema operativo ya lo había liberado
+            pass
+        self._log_fd = None
 
     def clear(self):
         """Remove all WAL files (backup, log, tx dir).  Use only for
@@ -414,4 +422,5 @@ class WAL:
             os.makedirs(self._tx_dir, exist_ok=True)
         self._last_seq = 0
         self.processed_ids = set()
-        self._log_fd = open(self._log_path, "ab")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_DSYNC
+        self._log_fd = os.open(self._log_path, flags)
